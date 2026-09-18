@@ -1,0 +1,122 @@
+# mundo de nombres «español»
+[f]
+Lucía
+Sofía
+Martina
+María
+Paula
+Julia
+Daniela
+Valeria
+Alba
+Emma
+Carla
+Sara
+Carmen
+Claudia
+Noa
+Vega
+Alma
+Lara
+Elena
+Marta
+Adriana
+Aitana
+Ana
+Beatriz
+Candela
+Clara
+Inés
+Irene
+Laia
+Leire
+Nerea
+Olivia
+Rocío
+Triana
+Ximena
+[m]
+Hugo
+Mateo
+Martín
+Lucas
+Leo
+Daniel
+Alejandro
+Manuel
+Pablo
+Álvaro
+Adrián
+Enzo
+Mario
+Diego
+Javier
+Marco
+Izan
+Bruno
+Miguel
+Antonio
+Carlos
+David
+Gonzalo
+Iker
+Jorge
+José
+Juan
+Marcos
+Nicolás
+Óscar
+Raúl
+Rubén
+Sergio
+Tomás
+Víctor
+[last]
+Navarro
+Castillo
+Delgado
+Ortega
+Iglesias
+Vargas
+Molina
+Cabrera
+Herrera
+Guerrero
+Medina
+Cortés
+Serrano
+Rubio
+Blanco
+Aguilar
+Pascual
+Vidal
+Santos
+Lozano
+Cano
+Prieto
+Méndez
+Calvo
+Gallego
+Vega
+León
+Peña
+Marín
+Ibáñez
+Reyes
+Soto
+Crespo
+Bravo
+Arias
+[street]
+Calle Mayor
+Calle de la Luna
+Avenida de la Paz
+Calle del Sol
+Plaza de España
+Calle Real
+Paseo de los Olivos
+Calle Nueva
+Camino de las Huertas
+Calle del Carmen
+Avenida de Andalucía
+Calle de la Iglesia

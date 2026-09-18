@@ -1,0 +1,105 @@
+# name world "fantasy"
+[f]
+Elaria
+Sylwen
+Maeryn
+Thalia
+Ysolde
+Aeliana
+Brienna
+Cerys
+Delphira
+Eowyn
+Faelith
+Gwyneth
+Isolde
+Kaelith
+Liriel
+Morwenna
+Nimue
+Oriel
+Rhiannon
+Seraphine
+Tamsin
+Vaelora
+Wrenna
+Yseult
+Zephyra
+Aldara
+Calanthe
+Elowen
+Ilyana
+Melisande
+[m]
+Aldric
+Bramwell
+Caelan
+Draven
+Eldrin
+Faramond
+Gareth
+Halvard
+Ivor
+Kaelen
+Lorcan
+Malachi
+Norwin
+Orrin
+Peregrin
+Roderick
+Sylvan
+Theron
+Ulric
+Varek
+Wulfric
+Ysmir
+Alaric
+Beren
+Corvin
+Dorian
+Evander
+Fenwick
+Galadon
+Torvald
+[last]
+Stormwind
+Ashgrove
+Brightblade
+Duskwater
+Emberfall
+Frostmere
+Goldleaf
+Hollowmoor
+Ironhand
+Moonshadow
+Nightbriar
+Oakenshield
+Ravenholm
+Silverbrook
+Thornwood
+Winterbourne
+Ashvale
+Blackthorn
+Dawnbringer
+Fairwind
+Greycastle
+Highmere
+Ironwood
+Lightfoot
+Mistvale
+Redfern
+Shadowmere
+Stonebridge
+Wildmoor
+Windrider
+[street]
+Dragon's Rest Lane
+Old Mill Way
+Wyvern Alley
+Silverleaf Road
+Moonwell Street
+Hearthstone Row
+Thornbriar Path
+Sunder Bridge
+Gloaming Walk
+Kingsroad

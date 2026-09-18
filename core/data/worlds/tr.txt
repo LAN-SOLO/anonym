@@ -1,0 +1,105 @@
+# isim dünyası „türkçe“
+[f]
+Zeynep
+Elif
+Defne
+Azra
+Ecrin
+Nehir
+Eylül
+Asel
+Miray
+Ela
+Ayşe
+Ada
+Naz
+Duru
+Lina
+Meryem
+Beren
+Ceren
+Deniz
+Derin
+Ezgi
+Gizem
+İrem
+Melis
+Nisa
+Pınar
+Selin
+Sude
+Tuana
+Yağmur
+[m]
+Yusuf
+Alparslan
+Miraç
+Ömer
+Eymen
+Mustafa
+Ali
+Ahmet
+Kerem
+Emir
+Aras
+Mehmet
+Hamza
+Ayaz
+Çınar
+Arda
+Burak
+Can
+Cem
+Efe
+Emre
+Kaan
+Mert
+Onur
+Poyraz
+Rüzgar
+Sarp
+Tuna
+Umut
+Yiğit
+[last]
+Korkmaz
+Aksoy
+Bulut
+Erdoğan
+Güneş
+Karaca
+Polat
+Taş
+Turan
+Uçar
+Yalçın
+Acar
+Aktaş
+Ateş
+Bozkurt
+Çakır
+Duman
+Eren
+Gül
+Işık
+Kalkan
+Kaplan
+Keskin
+Orhan
+Özer
+Sarı
+Sezer
+Tekin
+Toprak
+Yavuz
+[street]
+Atatürk Caddesi
+Cumhuriyet Caddesi
+İstiklal Caddesi
+Bağdat Caddesi
+Gül Sokak
+Çınar Sokak
+Zafer Sokak
+Barış Sokak
+Fatih Caddesi
+Mimar Sinan Caddesi

@@ -1,0 +1,105 @@
+# name world "science fiction"
+[f]
+Zara
+Nyx
+Vela
+Astra
+Lyra
+Kessa
+Orla
+Rhea
+Sable
+Talis
+Vesper
+Xandra
+Ysra
+Kaia
+Mira
+Nova
+Ondra
+Priya
+Solenne
+Tamar
+Ilse
+Juno
+Kira
+Luma
+Maren
+Nadira
+Riva
+Selka
+Thessaly
+Verity
+[m]
+Kael
+Orion
+Jax
+Ryn
+Soren
+Talon
+Vance
+Zed
+Axel
+Bastian
+Cyrus
+Dax
+Enzo
+Fenn
+Garron
+Idris
+Jareth
+Kato
+Lior
+Marek
+Niall
+Oberon
+Pax
+Quill
+Rook
+Silas
+Tiberius
+Ulan
+Voss
+Wren
+[last]
+Vantar
+Kessler-7
+Orimoto
+Halcyon
+Draxon
+Ferros
+Quillon
+Sato-Reyes
+Tarkanian
+Vex
+Andros
+Belmar
+Corvane
+Dahl
+Eskard
+Farlane
+Gryph
+Haddon
+Ivarsen
+Jorund
+Kade
+Lorne
+Mekar
+Nyquist
+Ostrander
+Pellar
+Renko
+Strand
+Tessaro
+Yoshimura
+[street]
+Orbital Ring 4
+Dock Level 12
+Helix Avenue
+Kepler Row
+Meridian Deck
+Nova Plaza
+Sector 7 Concourse
+Terminus Walk
+Vega Boulevard
+Zenith Spur

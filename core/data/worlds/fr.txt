@@ -1,0 +1,122 @@
+# monde de noms « français »
+[f]
+Camille
+Chloé
+Léa
+Manon
+Inès
+Jade
+Louise
+Emma
+Alice
+Lina
+Zoé
+Juliette
+Margot
+Clara
+Léonie
+Agathe
+Amandine
+Aurélie
+Céleste
+Colette
+Delphine
+Éloïse
+Fleur
+Gabrielle
+Hélène
+Joséphine
+Lucie
+Madeleine
+Mathilde
+Noémie
+Océane
+Pauline
+Rosalie
+Salomé
+Solène
+[m]
+Gabriel
+Léo
+Raphaël
+Arthur
+Louis
+Lucas
+Adam
+Jules
+Hugo
+Maël
+Nathan
+Théo
+Paul
+Noé
+Tom
+Antoine
+Baptiste
+Clément
+Damien
+Émile
+Florian
+Gaspard
+Guillaume
+Henri
+Julien
+Laurent
+Mathis
+Maxime
+Olivier
+Pierre
+Quentin
+Rémi
+Sébastien
+Thibault
+Yann
+[last]
+Lefèvre
+Marchand
+Beaumont
+Chevalier
+Delacroix
+Fontaine
+Garnier
+Leclerc
+Perrin
+Renard
+Boucher
+Carpentier
+Dumont
+Faure
+Giraud
+Lemoine
+Masson
+Olivier
+Picard
+Roux
+Aubert
+Barbier
+Colin
+Deschamps
+Étienne
+Gauthier
+Hubert
+Joly
+Lacroix
+Meunier
+Noël
+Pelletier
+Rey
+Sauvage
+Vidal
+[street]
+Rue des Lilas
+Rue de la Gare
+Avenue des Tilleuls
+Rue du Moulin
+Chemin des Vignes
+Place du Marché
+Rue de l'Église
+Allée des Roses
+Boulevard Victor Hugo
+Rue Pasteur
+Impasse des Peupliers
+Rue du Château

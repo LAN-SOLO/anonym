@@ -1,0 +1,155 @@
+# name world "english"
+[f]
+Olivia
+Amelia
+Isla
+Ava
+Ivy
+Freya
+Lily
+Florence
+Mia
+Willow
+Rosie
+Sophia
+Isabella
+Grace
+Daisy
+Poppy
+Evie
+Elsie
+Phoebe
+Sienna
+Harriet
+Matilda
+Emily
+Charlotte
+Maisie
+Hannah
+Lucy
+Ruby
+Alice
+Esme
+Eleanor
+Imogen
+Iris
+Jessica
+Layla
+Millie
+Nancy
+Orla
+Penelope
+Rose
+[m]
+Oliver
+George
+Arthur
+Noah
+Muhammad
+Leo
+Oscar
+Harry
+Archie
+Henry
+Jack
+Charlie
+Freddie
+Alfie
+Theo
+Finley
+Jacob
+Thomas
+Edward
+Alexander
+Albert
+Arlo
+Benjamin
+Elijah
+Ethan
+Felix
+Hugo
+Isaac
+Jude
+Louis
+Lucas
+Max
+Reuben
+Rory
+Rupert
+Sebastian
+Stanley
+Teddy
+Toby
+William
+[last]
+Whitmore
+Ashford
+Pemberton
+Hargreaves
+Beckett
+Kingsley
+Thornton
+Radcliffe
+Ellison
+Marlow
+Hartley
+Sinclair
+Winslow
+Fairbanks
+Holloway
+Lancaster
+Norwood
+Pennington
+Redmond
+Sheldon
+Tremaine
+Underwood
+Wakefield
+Yardley
+Abbott
+Bridger
+Calloway
+Dunmore
+Everett
+Fletcher
+Garrison
+Hollister
+Kendrick
+Lockwood
+Merriweather
+Nightingale
+Oakes
+Prescott
+Quinlan
+Rowntree
+Stirling
+Talbot
+Vance
+Wentworth
+Ainsley
+Barlow
+Chadwick
+Dalton
+Fenwick
+Grantham
+[street]
+Maple Avenue
+Oak Street
+Elm Road
+Cedar Lane
+Birch Close
+Willow Drive
+Church Lane
+Mill Road
+Station Road
+High Street
+Park Avenue
+Meadow Way
+Orchard Close
+Kings Road
+Queens Avenue
+Victoria Street
+Albert Road
+Chapel Street
+Green Lane
+Hill Street

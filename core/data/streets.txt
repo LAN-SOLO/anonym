@@ -1,0 +1,53 @@
+# Ersatz-Straßennamen (Welt de) — ohne Hausnummer
+Ahornweg
+Akazienallee
+Amselweg
+Bachstraße
+Bahnhofstraße
+Berliner Straße
+Birkenweg
+Blumenstraße
+Breite Straße
+Brunnenstraße
+Buchenweg
+Dorfstraße
+Eichenweg
+Erlenweg
+Feldstraße
+Fichtenstraße
+Finkenweg
+Friedhofstraße
+Gartenstraße
+Goethestraße
+Hauptstraße
+Heideweg
+Hochstraße
+Industriestraße
+Jahnstraße
+Kastanienallee
+Kirchgasse
+Kirchstraße
+Lerchenweg
+Lindenstraße
+Marktplatz
+Mittelstraße
+Mühlenweg
+Neue Straße
+Parkstraße
+Poststraße
+Ringstraße
+Rosenweg
+Schillerstraße
+Schulstraße
+Talstraße
+Tannenweg
+Uhlandstraße
+Waldstraße
+Wiesenweg
+Am Anger
+Am Bahnhof
+Am Hang
+Am Sportplatz
+An der Mühle
+Im Winkel
+Zum Brunnen

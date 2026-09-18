@@ -1,0 +1,105 @@
+# Namenswelt „Mittelalter“
+[f]
+Adelheid
+Agnes
+Berta
+Brunhild
+Cäcilia
+Dietlind
+Elsbeth
+Frideswinde
+Gerlinde
+Gertrud
+Hedwig
+Hildegard
+Irmgard
+Judith
+Kunigunde
+Luitgard
+Mechthild
+Ottilie
+Richza
+Sieglinde
+Walburga
+Wiltrud
+Alheit
+Benedikta
+Clementia
+Ermentrud
+Gisela
+Hemma
+Ida
+Reglindis
+[m]
+Adalbert
+Arnulf
+Berthold
+Burkhard
+Dietmar
+Eberhard
+Friedrich
+Gottfried
+Hartwig
+Heinrich
+Konrad
+Lambert
+Meinhard
+Otmar
+Reinmar
+Siegbert
+Tankred
+Ulrich
+Walther
+Wolfram
+Albrecht
+Balduin
+Ekkehard
+Gerold
+Hugo
+Ludolf
+Notker
+Rupert
+Theobald
+Wendelin
+[last]
+von Falkenstein
+von Hohenburg
+Schmied
+Müllner
+Wagner
+Zimmermann
+Fuhrmann
+Böttcher
+Ackermann
+von Rabenau
+Schäffer
+Kürschner
+Weber
+Gerber
+Bogner
+Sattler
+Seiler
+Kessler
+Pfister
+Schreiner
+von Wolkenstein
+von Lichtenberg
+Falkner
+Jäger
+Vogler
+Fischer
+Köhler
+Krämer
+Zöllner
+Wirt
+[street]
+Kirchgasse
+Schmiedgasse
+Gerbergasse
+Marktgasse
+Judengasse
+Am Stadttor
+Unter den Linden
+Hinter der Mauer
+Burgweg
+Mühlgasse
