@@ -185,6 +185,24 @@ pub fn shift(text: &str, days: i32) -> Option<String> {
     None
 }
 
+/// Excel-Seriennummer (Tage seit 1899-12-30, optional mit Zeitanteil) verschieben.
+pub fn shift_serial(text: &str, days: i32) -> Option<String> {
+    let t = text.trim();
+    if t.is_empty() || !t.chars().all(|c| c.is_ascii_digit() || c == '.') || t.matches('.').count() > 1 {
+        return None;
+    }
+    let (int_part, frac) = match t.find('.') {
+        Some(i) => (&t[..i], &t[i..]),
+        None => (t, ""),
+    };
+    let n: i64 = int_part.parse().ok()?;
+    // plausibler Datumsbereich: 1900-03-01 … 2199-12-31
+    if !(61..=109_574).contains(&n) {
+        return None;
+    }
+    Some(format!("{}{frac}", n + days as i64))
+}
+
 /// Prüft, ob ein Regex-Treffer ein gültiges Datum ist (für die Erkennung).
 pub fn is_valid(text: &str) -> bool {
     shift(text, 0).is_some()
@@ -207,5 +225,9 @@ mod tests {
         assert_eq!(shift("1.2.03", 0).unwrap(), "1.2.03");
         assert!(shift("31.02.2024", 1).is_none());
         assert!(shift("99.99.9999", 1).is_none());
+        assert_eq!(shift_serial("29774", 13).unwrap(), "29787");
+        assert_eq!(shift_serial("40000.5", -1).unwrap(), "39999.5");
+        assert!(shift_serial("10482", 1).is_some());
+        assert!(shift_serial("5", 1).is_none());
     }
 }

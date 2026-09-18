@@ -46,7 +46,7 @@ fn prepare(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Options) -> 
         _ => None,
     };
     let mut notes = Vec::new();
-    let raw = detect::detect(&doc.text, rules, dicts, delimiter, &mut notes);
+    let raw = detect::detect(&doc.text, rules, dicts, delimiter, &doc.forced, &mut notes);
     doc.notes.extend(notes);
     let mut pseudo = pseudo::Pseudonymizer::new(World::builtin(&rules.world), &rules.seed, rules.date_shift_days, opts.store.clone());
 

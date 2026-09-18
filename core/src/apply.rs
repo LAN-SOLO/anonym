@@ -57,7 +57,7 @@ fn pseudonym(text: &str, category: Category, parts: &[NamePart], seps: &[String]
         }
         Category::Address => p.address(text),
         Category::PostalCode => p.postal_code(text),
-        Category::Date => dates::shift(text, p.date_offset_days).unwrap_or_else(|| p.customer_id(text)),
+        Category::Date => dates::shift(text, p.date_offset_days).or_else(|| dates::shift_serial(text, p.date_offset_days)).unwrap_or_else(|| p.customer_id(text)),
         Category::Email => p.email(text, d),
         Category::Phone => p.phone(text),
         Category::Iban => p.iban(text),

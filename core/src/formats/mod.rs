@@ -43,6 +43,17 @@ pub struct Document {
     /// Nur bei XML-Containern: Ursprungsbytes + Textknoten-Karte
     pub xml: Option<xml::Container>,
     pub notes: Vec<String>,
+    /// Zeilen des virtuellen Texts, die durch eine typisierte Tabellenspalte
+    /// bereits einer Kategorie zugeordnet sind (XLSX: Kopfzeile → Spalte).
+    pub forced: Vec<ForcedLine>,
+}
+
+/// Eine per Spaltenkopf typisierte Zeile des virtuellen Texts.
+#[derive(Debug, Clone, Copy)]
+pub struct ForcedLine {
+    pub line: usize,
+    pub category: crate::model::Category,
+    pub hint: crate::csv::PersonHint,
 }
 
 pub fn extension(path: &Path) -> String {
@@ -67,7 +78,7 @@ pub fn open(path: &Path, fallback_encoding: &str) -> Result<Document, String> {
             if encoding.legacy {
                 notes.push(format!("Kodierung {} erkannt — Ausgabe in derselben Kodierung.", encoding.name));
             }
-            Ok(Document { kind, text, encoding, xml: None, notes })
+            Ok(Document { kind, text, encoding, xml: None, notes, forced: Vec::new() })
         }
     }
 }

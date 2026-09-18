@@ -366,7 +366,7 @@ fn md(content: &Content) -> String {
 }
 
 fn html(content: &Content, title: &str) -> String {
-    let mut s = format!("<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>{}</title>\n<style>body{{font-family:system-ui,sans-serif;margin:2rem}}table{{border-collapse:collapse}}td,th{{border:1px solid #999;padding:4px 8px;text-align:left}}th{{background:#eee}}</style>\n</head>\n<body>\n", escape(title));
+    let mut s = format!("<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\" />\n<title>{}</title>\n<style>body{{font-family:system-ui,sans-serif;margin:2rem}}table{{border-collapse:collapse}}td,th{{border:1px solid #999;padding:4px 8px;text-align:left}}th{{background:#eee}}</style>\n</head>\n<body>\n", escape(title));
     match content {
         Content::Text(lines) => {
             for l in lines {

@@ -6,6 +6,7 @@ use crate::checksum;
 use crate::csv;
 use crate::dates;
 use crate::dict::Dictionaries;
+use crate::formats::ForcedLine;
 use crate::model::{Category, CustomPattern, CustomWords, Gender, NamePart, Rules, Source};
 use regex::Regex;
 use std::sync::OnceLock;
@@ -493,8 +494,37 @@ fn typed_rows(text: &str, rows: &[Vec<csv::Cell>], d: &Dictionaries, out: &mut V
     }
 }
 
+/// Zeilen, die schon per Spaltenkopf typisiert sind (XLSX): ganze Zeile = Treffer.
+fn detect_forced(text: &str, forced: &[ForcedLine], d: &Dictionaries, out: &mut Vec<RawMatch>) {
+    if forced.is_empty() {
+        return;
+    }
+    let mut starts: Vec<usize> = vec![0];
+    for (i, b) in text.bytes().enumerate() {
+        if b == b'\n' {
+            starts.push(i + 1);
+        }
+    }
+    for f in forced {
+        let Some(&s) = starts.get(f.line) else { continue };
+        let e = text[s..].find('\n').map(|i| s + i).unwrap_or(text.len());
+        let raw = &text[s..e];
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let ts = s + (raw.len() - raw.trim_start().len());
+        let te = ts + trimmed.len();
+        if f.category == Category::Person {
+            out.push(person_from_cell(text, ts, te, d, f.hint));
+        } else {
+            out.push(RawMatch::simple(ts, te, f.category, Source::Column, 80));
+        }
+    }
+}
+
 /// Alle Treffer für einen Text — bereits nach Priorität entflochten und nach Position sortiert.
-pub fn detect(text: &str, rules: &Rules, d: &Dictionaries, csv_delimiter: Option<char>, notes: &mut Vec<String>) -> Vec<RawMatch> {
+pub fn detect(text: &str, rules: &Rules, d: &Dictionaries, csv_delimiter: Option<char>, forced: &[ForcedLine], notes: &mut Vec<String>) -> Vec<RawMatch> {
     let mut raw: Vec<RawMatch> = Vec::new();
     detect_persons(text, d, &mut raw);
     detect_patterns(text, d, &mut raw);
@@ -502,7 +532,8 @@ pub fn detect(text: &str, rules: &Rules, d: &Dictionaries, csv_delimiter: Option
     if rules.column_typing {
         match csv_delimiter {
             Some(delim) => detect_columns(text, delim, d, &mut raw),
-            None => detect_fixed_width(text, d, &mut raw),
+            None if forced.is_empty() => detect_fixed_width(text, d, &mut raw),
+            None => detect_forced(text, forced, d, &mut raw),
         }
     }
 
@@ -552,7 +583,7 @@ mod tests {
     fn run(text: &str) -> Vec<(Category, String)> {
         let d = Dictionaries::builtin();
         let mut notes = Vec::new();
-        detect(text, &Rules::default(), &d, None, &mut notes).into_iter().map(|m| (m.category, text[m.bstart..m.bend].to_string())).collect()
+        detect(text, &Rules::default(), &d, None, &[], &mut notes).into_iter().map(|m| (m.category, text[m.bstart..m.bend].to_string())).collect()
     }
 
     #[test]
@@ -604,7 +635,7 @@ mod tests {
         rules.categories.get_mut(&Category::Email).unwrap().enabled = false;
         let text = "Die Anna Berger GmbH schreibt an info@example.org. Anna Berger selbst auch.";
         let mut notes = Vec::new();
-        let found: Vec<String> = detect(text, &rules, &d, None, &mut notes).into_iter().map(|m| text[m.bstart..m.bend].to_string()).collect();
+        let found: Vec<String> = detect(text, &rules, &d, None, &[], &mut notes).into_iter().map(|m| text[m.bstart..m.bend].to_string()).collect();
         assert_eq!(found, vec!["Anna Berger".to_string()], "{found:?}");
     }
 
@@ -613,7 +644,7 @@ mod tests {
         let d = Dictionaries::builtin();
         let text = "Kd-Nr;Nachname;Vorname;Geb.;Ort\n10482;Zyxwacz;Anna;02.07.1981;Köln\n";
         let mut notes = Vec::new();
-        let found: Vec<(Category, String)> = detect(text, &Rules::default(), &d, Some(';'), &mut notes).into_iter().map(|m| (m.category, text[m.bstart..m.bend].to_string())).collect();
+        let found: Vec<(Category, String)> = detect(text, &Rules::default(), &d, Some(';'), &[], &mut notes).into_iter().map(|m| (m.category, text[m.bstart..m.bend].to_string())).collect();
         assert!(found.contains(&(Category::CustomerId, "10482".into())), "{found:?}");
         assert!(found.contains(&(Category::Person, "Zyxwacz".into())), "{found:?}");
         assert!(found.contains(&(Category::Person, "Anna".into())));
