@@ -12,3 +12,6 @@ regex = "1"
 chrono = { version = "0.4", features = ["serde"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 encoding_rs = "0.8"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+base64 = "0.22"

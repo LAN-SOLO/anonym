@@ -26,6 +26,10 @@ pub struct Settings {
     pub use_store: bool,
     /// Bericht (JSON) neben die Ausgabe schreiben.
     pub write_report: bool,
+    /// Recover-Datei (Schlüssel zur Rückübersetzung) neben die Ausgabe schreiben.
+    pub write_recover: bool,
+    /// Recover-Dateien mit Passwort verschlüsseln (Passwort wird je Sitzung abgefragt, nie gespeichert).
+    pub encrypt_recover: bool,
     /// Vor dem Überschreiben vorhandener Ausgaben nachfragen (nur UI).
     pub confirm_overwrite: bool,
 }
@@ -43,6 +47,8 @@ impl Default for Settings {
             fallback_encoding: "windows-1252".into(),
             use_store: false,
             write_report: true,
+            write_recover: true,
+            encrypt_recover: false,
             confirm_overwrite: true,
         }
     }

@@ -188,6 +188,17 @@ export function SettingsModal({
               <input type="checkbox" checked={s.writeReport} onChange={(e) => set('writeReport', e.target.checked)} />
               {t.writeReport}
             </label>
+            <div className="sep" />
+            <label className="check">
+              <input type="checkbox" checked={s.writeRecover} onChange={(e) => set('writeRecover', e.target.checked)} />
+              {t.writeRecover}
+            </label>
+            <div className="note">{t.writeRecoverHint}</div>
+            <label className="check">
+              <input type="checkbox" checked={s.encryptRecover} disabled={!s.writeRecover} onChange={(e) => set('encryptRecover', e.target.checked)} />
+              {t.encryptRecover}
+            </label>
+            <div className="note">{t.encryptRecoverHint}</div>
           </>
         )}
 

@@ -136,7 +136,25 @@ export interface Report {
 export interface ApplyResult {
   output: string;
   reportPath: string | null;
+  recoverPath: string | null;
   report: Report;
+}
+
+export interface RecoverInfo {
+  encrypted: boolean;
+  source: string | null;
+  output: string | null;
+  created: string | null;
+  entries: number;
+}
+
+export interface RecoverResult {
+  output: string;
+  format: string;
+  restored: number;
+  notFound: number;
+  ambiguous: number;
+  byKind: Record<string, number>;
 }
 
 export interface ExportTarget {
@@ -163,6 +181,8 @@ export interface Settings {
   fallbackEncoding: string;
   useStore: boolean;
   writeReport: boolean;
+  writeRecover: boolean;
+  encryptRecover: boolean;
   confirmOverwrite: boolean;
 }
 
@@ -183,6 +203,8 @@ export const defaultSettings: Settings = {
   fallbackEncoding: 'windows-1252',
   useStore: false,
   writeReport: true,
+  writeRecover: true,
+  encryptRecover: false,
   confirmOverwrite: true,
 };
 
@@ -215,8 +237,15 @@ export const api = {
   analyzeFile: (path: string, rules: Rules) => call<Analysis>('analyze_file', { path, rules }),
   suggestOutput: (path: string, ext?: string) => call<string>('suggest_output', { path, ext: ext ?? null }),
   exportTargets: () => call<ExportTarget[]>('export_targets'),
-  applyFile: (path: string, rules: Rules, decisions: Decision[], output: string) =>
-    call<ApplyResult>('apply_file', { path, rules, decisions, output }),
+  applyFile: (path: string, rules: Rules, decisions: Decision[], output: string, password?: string) =>
+    call<ApplyResult>('apply_file', { path, rules, decisions, output, password: password ?? null }),
+
+  // Rückübersetzung
+  recoverInfo: (path: string) => call<RecoverInfo>('recover_info', { path }),
+  suggestRecovered: (path: string) => call<string>('suggest_recovered', { path }),
+  suggestRecoverKey: (path: string) => call<string>('suggest_recover_key', { path }),
+  recoverFile: (path: string, keyPath: string, password: string | null, output: string) =>
+    call<RecoverResult>('recover_file', { path, keyPath, password, output }),
 
   // Pseudonym-Speicher
   storeInfo: () => call<StoreInfo>('store_info'),

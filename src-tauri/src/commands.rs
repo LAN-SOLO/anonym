@@ -4,6 +4,7 @@ use crate::settings::{self, Settings};
 use crate::state::AppState;
 use crate::store;
 use anonym_core::export::Target;
+use anonym_core::recover::{self, RecoverResult};
 use anonym_core::{Analysis, Decision, Options, Report, Rules, WORLD_IDS};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -25,7 +26,18 @@ pub struct UpdateInfoDto {
 pub struct ApplyResult {
     pub output: String,
     pub report_path: Option<String>,
+    pub recover_path: Option<String>,
     pub report: Report,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoverInfo {
+    pub encrypted: bool,
+    pub source: Option<String>,
+    pub output: Option<String>,
+    pub created: Option<String>,
+    pub entries: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -132,7 +144,7 @@ pub fn export_targets() -> Vec<ExportTarget> {
 }
 
 #[tauri::command]
-pub async fn apply_file(st: State<'_, Shared>, path: String, rules: Rules, decisions: Vec<Decision>, output: String) -> Result<ApplyResult, String> {
+pub async fn apply_file(st: State<'_, Shared>, path: String, rules: Rules, decisions: Vec<Decision>, output: String, password: Option<String>) -> Result<ApplyResult, String> {
     let st = st.inner().clone();
     let opts = options(&st);
     let s = st.settings_clone();
@@ -154,7 +166,19 @@ pub async fn apply_file(st: State<'_, Shared>, path: String, rules: Rules, decis
         } else {
             None
         };
-        Ok(ApplyResult { output: applied.output.to_string_lossy().into_owned(), report_path, report: applied.report })
+        let recover_path = if s.write_recover {
+            let rp = anonym_core::recover_path_for(out);
+            let pw = if s.encrypt_recover { password.as_deref().filter(|p| !p.is_empty()) } else { None };
+            if s.encrypt_recover && pw.is_none() {
+                return Err("PASSWORD_REQUIRED".into());
+            }
+            let bytes = recover::seal(&applied.recover, pw)?;
+            store::write_atomic(&rp, &bytes)?;
+            Some(rp.to_string_lossy().into_owned())
+        } else {
+            None
+        };
+        Ok(ApplyResult { output: applied.output.to_string_lossy().into_owned(), report_path, recover_path, report: applied.report })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -163,6 +187,47 @@ pub async fn apply_file(st: State<'_, Shared>, path: String, rules: Rules, decis
 fn report_path_for(out: &Path) -> PathBuf {
     let stem = out.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "ausgabe".into());
     out.with_file_name(format!("{stem}.report.json"))
+}
+
+// --- Rückübersetzung ---------------------------------------------------------
+
+#[tauri::command]
+pub fn recover_info(path: String) -> Result<RecoverInfo, String> {
+    let bytes = std::fs::read(&path).map_err(|e| format!("Recover-Datei nicht lesbar: {e}"))?;
+    if recover::is_sealed(&bytes) {
+        return Ok(RecoverInfo { encrypted: true, source: None, output: None, created: None, entries: 0 });
+    }
+    let f = recover::open(&bytes, None)?;
+    Ok(RecoverInfo { encrypted: false, source: Some(f.source), output: Some(f.output), created: Some(f.created), entries: f.entries.len() + f.parts.len() })
+}
+
+#[tauri::command]
+pub fn suggest_recovered(path: String) -> String {
+    anonym_core::suggest_recovered(Path::new(&path)).to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+pub fn suggest_recover_key(path: String) -> String {
+    // Zur bearbeiteten Datei passende Recover-Datei raten: <stem ohne .recovered>.recover.json daneben
+    let p = Path::new(&path);
+    let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    p.with_file_name(format!("{stem}.recover.json")).to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+pub async fn recover_file(st: State<'_, Shared>, path: String, key_path: String, password: Option<String>, output: String) -> Result<RecoverResult, String> {
+    let st = st.inner().clone();
+    let opts = options(&st);
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = std::fs::read(&key_path).map_err(|e| format!("Recover-Datei nicht lesbar: {e}"))?;
+        let key = recover::open(&bytes, password.as_deref())?;
+        if Path::new(&path) == Path::new(&output) {
+            return Err("Ausgabe darf die Quelle nicht überschreiben".to_string());
+        }
+        anonym_core::recover_file(Path::new(&path), &key, &opts, Path::new(&output))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // --- Pseudonym-Speicher -----------------------------------------------------

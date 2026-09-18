@@ -52,6 +52,13 @@ export function ReportView({ result, outputs, t, lang, onOpen }: { result: Apply
             </span>
           </div>
         )}
+        {result.recoverPath && (
+          <div className="pathrow">
+            <span className="mono dim">
+              {t.recoverFile}: {baseName(result.recoverPath)}
+            </span>
+          </div>
+        )}
         <div className="note">
           {t.reportCreated}: {fmtDateTime(r.created, lang)} · anonym {r.version}
         </div>

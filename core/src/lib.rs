@@ -12,6 +12,7 @@ pub mod export;
 pub mod formats;
 pub mod model;
 pub mod pseudo;
+pub mod recover;
 
 pub use dict::{Dictionaries, World, WORLD_IDS};
 pub use model::*;
@@ -144,6 +145,8 @@ pub struct Applied {
     pub report: Report,
     pub store: Store,
     pub output: PathBuf,
+    /// Schlüssel zur Rückübersetzung dieser Ausgabe.
+    pub recover: recover::RecoverFile,
 }
 
 /// Standard-Ausgabepfad: `<name>.anonym.<ext>` neben der Quelle (oder im Zielordner).
@@ -232,7 +235,37 @@ pub fn apply_file(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Optio
         by_category,
         entries: list,
     };
-    Ok(Applied { report, store: p.pseudo.store, output: output.to_path_buf() })
+    let recover = recover::build(&report, &p.pseudo, &rules.seed, &rules.world);
+    Ok(Applied { report, store: p.pseudo.store, output: output.to_path_buf(), recover })
+}
+
+/// Pfad der Recover-Datei zu einer Ausgabe: `<name>.anonym.recover.json`.
+pub fn recover_path_for(output: &Path) -> PathBuf {
+    let stem = output.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "ausgabe".into());
+    output.with_file_name(format!("{stem}.recover.json"))
+}
+
+/// Standard-Ausgabepfad einer Rückübersetzung: `<name>.recovered.<ext>` (Zusatz `.anonym` entfällt).
+pub fn suggest_recovered(path: &Path) -> PathBuf {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "datei".into());
+    let stem = stem.strip_suffix(".anonym").map(str::to_string).unwrap_or(stem);
+    let name = match path.extension() {
+        Some(e) => format!("{stem}.recovered.{}", e.to_string_lossy()),
+        None => format!("{stem}.recovered"),
+    };
+    path.with_file_name(name)
+}
+
+/// Bearbeitete anonymisierte Datei mit Recover-Datei zurückübersetzen und im selben Format schreiben.
+pub fn recover_file(path: &Path, key: &recover::RecoverFile, opts: &Options, output: &Path) -> Result<recover::RecoverResult, String> {
+    let fallback = if opts.fallback_encoding.is_empty() { "windows-1252" } else { opts.fallback_encoding.as_str() };
+    let doc = formats::open(path, fallback)?;
+    let (new_text, mut result) = recover::restore_text(&doc.text, key);
+    let bytes = formats::render(&doc, &new_text)?;
+    formats::write_bytes(&bytes, output)?;
+    result.output = output.to_string_lossy().into_owned();
+    result.format = doc.kind.label();
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -323,6 +356,44 @@ mod tests {
         let back = export::extract(&formats::Kind::Xlsx, &std::fs::read(&out).unwrap(), "").unwrap();
         match back {
             export::Content::Tables(t) => assert!(t[0].rows.len() >= 8),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn recover_after_editing() {
+        let path = tmp("rec.txt", LETTER.as_bytes());
+        let dicts = Dictionaries::builtin();
+        let rules = Rules::default();
+        let opts = Options::default();
+        let out = suggest_output(&path, None, "");
+        let applied = apply_file(&path, &rules, &dicts, &opts, &[], &out).unwrap();
+        assert!(applied.recover.entries.len() >= 9);
+        assert!(applied.recover.parts.iter().any(|p| p.kind == "last" && p.original == "berger"));
+        // Weiterbearbeitung: Zeile angehängt, Nachname allein verwendet, Groß-/Kleinschreibung geändert
+        let anon = std::fs::read_to_string(&out).unwrap();
+        let surname = anon.lines().next().unwrap().trim_start_matches("Sehr geehrte Frau ").trim_end_matches(',').to_string();
+        let edited = format!("{anon}\nNachtrag: {} hat zurückgerufen. Neue Kd-Nr 55555.\n", surname.to_uppercase());
+        let edited_path = tmp("rec.anonym.txt", edited.as_bytes());
+        let recovered = suggest_recovered(&edited_path);
+        assert!(recovered.to_string_lossy().ends_with("rec.recovered.txt"));
+        let key_bytes = recover::seal(&applied.recover, Some("pw")).unwrap();
+        let key = recover::open(&key_bytes, Some("pw")).unwrap();
+        let r = recover_file(&edited_path, &key, &opts, &recovered).unwrap();
+        let text = std::fs::read_to_string(&recovered).unwrap();
+        assert!(text.starts_with(LETTER.trim_end()), "{text}");
+        assert!(text.contains("Nachtrag: BERGER hat zurückgerufen. Neue Kd-Nr 55555."), "{text}");
+        assert!(r.restored >= 10 && r.ambiguous == 0, "{r:?}");
+        // Anderes Format: CSV → XLSX exportiert, dann zurück
+        let csv = tmp("rec2.csv", "Kd-Nr;Name;E-Mail\n10482;Anna Berger;anna@example.org\n".as_bytes());
+        let xlsx_out = suggest_output_as(&csv, None, "", Some("xlsx"));
+        let applied2 = apply_file(&csv, &rules, &dicts, &opts, &[], &xlsx_out).unwrap();
+        let rec2 = suggest_recovered(&xlsx_out);
+        let r2 = recover_file(&xlsx_out, &applied2.recover, &opts, &rec2).unwrap();
+        assert!(r2.restored >= 3, "{r2:?}");
+        let back = export::extract(&formats::Kind::Xlsx, &std::fs::read(&rec2).unwrap(), "").unwrap();
+        match back {
+            export::Content::Tables(t) => assert_eq!(t[0].rows[1], vec!["10482", "Anna Berger", "anna@example.org"]),
             _ => panic!(),
         }
     }

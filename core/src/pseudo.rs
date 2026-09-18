@@ -73,6 +73,8 @@ pub struct Pseudonymizer {
     pub slack: Option<usize>,
     /// Längenobergrenze für die nächste Wahl aus einer Liste (nur neue Zuordnungen).
     max_len: Option<usize>,
+    /// In diesem Lauf verwendete Speicher-Schlüssel (für die Recover-Datei).
+    pub touched: HashSet<String>,
 }
 
 impl Pseudonymizer {
@@ -99,7 +101,7 @@ impl Pseudonymizer {
                 -days
             }
         };
-        Pseudonymizer { world, seed: seed.to_string(), store, used, date_offset_days, slack: None, max_len: None }
+        Pseudonymizer { world, seed: seed.to_string(), store, used, date_offset_days, slack: None, max_len: None, touched: HashSet::new() }
     }
 
     fn key(kind: &str, original: &str) -> String {
@@ -113,6 +115,7 @@ impl Pseudonymizer {
     /// Ersatz aus einer Liste — gemerkt, eindeutig, nie gleich dem Original.
     fn pick(&mut self, kind: &str, original: &str, list: &[String]) -> String {
         let key = Self::key(kind, original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -148,6 +151,7 @@ impl Pseudonymizer {
 
     fn remember(&mut self, kind: &str, original: &str, value: String) -> String {
         let key = Self::key(kind, original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -208,6 +212,7 @@ impl Pseudonymizer {
     /// E-Mail: lokaler Teil aus bekannten Namen zusammensetzen, sonst deterministisch; Domain bleibt.
     pub fn email(&mut self, original: &str, d: &Dictionaries) -> String {
         let key = Self::key("email", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -270,6 +275,7 @@ impl Pseudonymizer {
     /// Telefon: erste Gruppe (Vorwahl) bleibt, Rest der Ziffern neu, Format erhalten.
     pub fn phone(&mut self, original: &str) -> String {
         let key = Self::key("phone", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -317,6 +323,7 @@ impl Pseudonymizer {
     /// IBAN: Land und Bankleitzahl bleiben, Kontonummer neu, Prüfziffer gültig, Gruppierung erhalten.
     pub fn iban(&mut self, original: &str) -> String {
         let key = Self::key("iban", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -344,6 +351,7 @@ impl Pseudonymizer {
     /// Kreditkarte: erste vier Ziffern bleiben, Rest neu, Luhn gültig, Gruppierung erhalten.
     pub fn credit_card(&mut self, original: &str) -> String {
         let key = Self::key("card", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -366,6 +374,7 @@ impl Pseudonymizer {
     /// Steuer-ID: gültige neue Nummer (ISO 7064 Mod 11,10), Gruppierung erhalten.
     pub fn tax_id(&mut self, original: &str) -> String {
         let key = Self::key("taxid", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -411,6 +420,7 @@ impl Pseudonymizer {
     /// Sozialversicherungsnummer: Bereichsnummer bleibt, Rest neu, Prüfziffer gültig.
     pub fn insurance(&mut self, original: &str) -> String {
         let key = Self::key("svnr", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -453,6 +463,7 @@ impl Pseudonymizer {
     /// Kennzeichen: Unterscheidungszeichen (Stadt) bleibt, Buchstaben und Ziffern neu.
     pub fn plate(&mut self, original: &str) -> String {
         let key = Self::key("plate", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -474,6 +485,7 @@ impl Pseudonymizer {
     /// IP: die ersten beiden Oktette (Netz) bleiben, Host neu.
     pub fn ip(&mut self, original: &str) -> String {
         let key = Self::key("ip", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -507,6 +519,7 @@ impl Pseudonymizer {
     /// Kunden-/Aktenzeichen: Buchstaben und Trennzeichen bleiben, Ziffern neu (gleiche Länge).
     pub fn customer_id(&mut self, original: &str) -> String {
         let key = Self::key("id", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -528,6 +541,7 @@ impl Pseudonymizer {
     /// Postleitzahl: Gebiet (erste zwei Ziffern) bleibt.
     pub fn postal_code(&mut self, original: &str) -> String {
         let key = Self::key("plz", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -552,6 +566,7 @@ impl Pseudonymizer {
     /// Straße + Hausnummer: Straße aus der Welt, Hausnummer neu.
     pub fn address(&mut self, original: &str) -> String {
         let key = Self::key("address", original);
+        self.touched.insert(key.clone());
         if let Some(v) = self.store.entries.get(&key) {
             return v.clone();
         }
@@ -643,6 +658,13 @@ pub fn match_case(original: &str, value: &str) -> String {
         value.to_uppercase()
     } else if !letters.is_empty() && letters.iter().all(|c| c.is_lowercase()) {
         value.to_lowercase()
+    } else if letters.first().map(|c| c.is_uppercase()).unwrap_or(false) {
+        // Kapitalisiert: ersten Buchstaben groß, Rest wie überliefert
+        let mut cs = value.chars();
+        match cs.next() {
+            Some(f) => f.to_uppercase().collect::<String>() + cs.as_str(),
+            None => String::new(),
+        }
     } else {
         value.to_string()
     }
