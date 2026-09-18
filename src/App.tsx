@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { Decision, ExportTarget, FILE_EXTENSIONS, RecoverResult, Rules, Settings, UpdateInfo, api, defaultSettings } from './api';
+import { Decision, ExportTarget, FILE_EXTENSIONS, Rules, Settings, UpdateInfo, api, defaultSettings } from './api';
 import { dicts, Lang } from './i18n';
 import { Findings } from './components/Findings';
 import { Help } from './components/Help';
 import { Preview } from './components/Preview';
 import { ReportView } from './components/ReportView';
+import { RecoverModal } from './components/RecoverModal';
 import { RulesView } from './components/RulesView';
 import { SettingsModal } from './components/SettingsModal';
 import { FileEntry, Sidebar } from './components/Sidebar';
@@ -85,7 +86,7 @@ export default function App() {
   const [targets, setTargets] = useState<ExportTarget[]>([]);
   const [exportExt, setExportExt] = useState('xlsx');
   const [prompt, setPrompt] = useState<{ title: string; label: string } | null>(null);
-  const [recovered, setRecovered] = useState<RecoverResult | null>(null);
+  const [showRecover, setShowRecover] = useState(false);
   /** Sitzungs-Passwort für Recover-Dateien (nie gespeichert). */
   const sessionPw = useRef<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -390,44 +391,7 @@ export default function App() {
   };
 
   // --- Wiederherstellen ----------------------------------------------------------
-  const recoverFlow = useCallback(async () => {
-    if (busy) return;
-    const file = await open({ multiple: false, title: t.recoverPickFile, filters: [{ name: t.allFiles, extensions: FILE_EXTENSIONS }] });
-    if (typeof file !== 'string') return;
-    const keyGuess = await api.suggestRecoverKey(file).catch(() => '');
-    const keyExists = keyGuess ? await api.pathExists(keyGuess).catch(() => false) : false;
-    const key = await open({ multiple: false, title: t.recoverPickKey, defaultPath: keyExists ? keyGuess : undefined, filters: [{ name: t.recoverKeyFile, extensions: ['json'] }] });
-    if (typeof key !== 'string') return;
-    let info;
-    try {
-      info = await api.recoverInfo(key);
-    } catch (e) {
-      fail(e);
-      return;
-    }
-    let pw: string | null = null;
-    if (info.encrypted) {
-      pw = sessionPw.current ?? (await askText(t.recoverTitle, t.recoverPassword));
-      if (!pw) return;
-    }
-    const suggested = await api.suggestRecovered(file);
-    const ext = file.split('.').pop()?.toLowerCase() ?? '';
-    const output = await save({ defaultPath: suggested, filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : undefined });
-    if (!output) return;
-    setBusy(true);
-    try {
-      const res = await api.recoverFile(file, key, pw, output);
-      setRecovered(res);
-    } catch (e) {
-      const msg = String(e);
-      if (msg.includes('PASSWORD_WRONG')) {
-        sessionPw.current = null;
-        showToast(t.recoverPasswordWrong, true);
-      } else fail(e);
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, t, fail, askText, showToast]);
+  const recoverFlow = useCallback(() => setShowRecover(true), []);
 
   // --- Einstellungen -----------------------------------------------------------
   const saveSettings = (s: Settings) => {
@@ -460,7 +424,7 @@ export default function App() {
       }
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (showSettings || confirm || prompt || recovered) {
+      if (showSettings || confirm || prompt || showRecover) {
         if (e.key === 'Escape') {
           if (showSettings) {
             if (settingsBackup) setSettings(settingsBackup);
@@ -469,7 +433,7 @@ export default function App() {
           }
           if (confirm) settleConfirm('cancel');
           if (prompt) settlePrompt(null);
-          if (recovered) setRecovered(null);
+          if (showRecover) setShowRecover(false);
         }
         return;
       }
@@ -502,7 +466,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [settings, settingsBackup, showSettings, confirm, prompt, recovered, pickFiles, applySelected, recoverFlow]);
+  }, [settings, settingsBackup, showSettings, confirm, prompt, showRecover, pickFiles, applySelected, recoverFlow]);
 
   if (!settings || !rules) return null;
 
@@ -676,36 +640,15 @@ export default function App() {
 
       {prompt && <PromptModal title={prompt.title} label={prompt.label} okLabel={t.ok2} cancelLabel={t.cancel} password onOk={(v) => settlePrompt(v)} onClose={() => settlePrompt(null)} />}
 
-      {recovered && (
-        <div className="overlay" onClick={() => setRecovered(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>{t.recoverDone}</h2>
-            <div className="kpis" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-              <div className="kpi">
-                <div className="k">{t.recoverRestored}</div>
-                <div className="v">{recovered.restored}</div>
-              </div>
-              <div className="kpi">
-                <div className="k">{t.recoverNotFound}</div>
-                <div className="v" style={{ color: 'var(--text-dim)' }}>{recovered.notFound}</div>
-              </div>
-              <div className="kpi">
-                <div className="k">{t.recoverAmbiguous}</div>
-                <div className="v" style={{ color: 'var(--text-dim)' }}>{recovered.ambiguous}</div>
-              </div>
-            </div>
-            <div className="pathrow">
-              <span className="chip mini dim">{recovered.format}</span>
-              <span className="mono">{baseName(recovered.output)}</span>
-              <button onClick={() => api.openPath(recovered.output.slice(0, Math.max(recovered.output.lastIndexOf('/'), recovered.output.lastIndexOf('\\')))).catch(fail)}>{t.reportOpenFolder}</button>
-            </div>
-            <div className="btnrow">
-              <button className="primary" onClick={() => setRecovered(null)}>
-                {t.ok}
-              </button>
-            </div>
-          </div>
-        </div>
+      {showRecover && (
+        <RecoverModal
+          targets={targets}
+          sessionPassword={sessionPw.current}
+          t={t}
+          onClose={() => setShowRecover(false)}
+          onDone={() => {}}
+          onFail={fail}
+        />
       )}
 
       {confirm && <ConfirmModal text={confirm.text} okLabel={confirm.ok ?? t.ok} cancelLabel={t.cancel} altLabel={confirm.alt} onOk={() => settleConfirm('ok')} onAlt={() => settleConfirm('alt')} onClose={() => settleConfirm('cancel')} />}

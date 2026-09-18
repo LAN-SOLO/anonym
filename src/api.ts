@@ -242,7 +242,7 @@ export const api = {
 
   // Rückübersetzung
   recoverInfo: (path: string) => call<RecoverInfo>('recover_info', { path }),
-  suggestRecovered: (path: string) => call<string>('suggest_recovered', { path }),
+  suggestRecovered: (path: string, ext?: string) => call<string>('suggest_recovered', { path, ext: ext ?? null }),
   suggestRecoverKey: (path: string) => call<string>('suggest_recover_key', { path }),
   recoverFile: (path: string, keyPath: string, password: string | null, output: string) =>
     call<RecoverResult>('recover_file', { path, keyPath, password, output }),

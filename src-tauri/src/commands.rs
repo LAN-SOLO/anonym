@@ -202,8 +202,8 @@ pub fn recover_info(path: String) -> Result<RecoverInfo, String> {
 }
 
 #[tauri::command]
-pub fn suggest_recovered(path: String) -> String {
-    anonym_core::suggest_recovered(Path::new(&path)).to_string_lossy().into_owned()
+pub fn suggest_recovered(path: String, ext: Option<String>) -> String {
+    anonym_core::suggest_recovered(Path::new(&path), ext.as_deref()).to_string_lossy().into_owned()
 }
 
 #[tauri::command]

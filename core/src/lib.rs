@@ -197,23 +197,7 @@ pub fn apply_file(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Optio
         edits.push((f.bstart, f.bend, replacement));
     }
     let new_text = apply::splice(&p.doc.text, &edits);
-    let native = formats::render(&p.doc, &new_text)?;
-    // Andere Endung als die Quelle → Export in dieses Format
-    let src_ext = formats::extension(path);
-    let out_ext = formats::extension(output);
-    let exported = match export::Target::from_ext(&out_ext) {
-        Some(target) if out_ext != src_ext => {
-            let content = export::extract(&p.doc.kind, &native, &new_text)?;
-            let title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            Some((target, export::render(&content, target, &title)?))
-        }
-        _ => None,
-    };
-    let format_label = match &exported {
-        Some((t, _)) => format!("{} → {}", p.doc.kind.label(), t.label()),
-        None => p.doc.kind.label(),
-    };
-    formats::write_bytes(exported.map(|(_, b)| b).as_deref().unwrap_or(&native), output)?;
+    let format_label = write_output(&p.doc, &new_text, path, output)?;
 
     let mut list: Vec<ReportEntry> = entries
         .into_iter()
@@ -239,32 +223,55 @@ pub fn apply_file(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Optio
     Ok(Applied { report, store: p.pseudo.store, output: output.to_path_buf(), recover })
 }
 
+/// Neuen virtuellen Text als Datei schreiben: im Ursprungsformat oder — bei anderer
+/// Endung — exportiert. Liefert die Formatbezeichnung für den Bericht.
+fn write_output(doc: &Document, new_text: &str, src: &Path, output: &Path) -> Result<String, String> {
+    let native = formats::render(doc, new_text)?;
+    let src_ext = formats::extension(src);
+    let out_ext = formats::extension(output);
+    let exported = match export::Target::from_ext(&out_ext) {
+        Some(target) if out_ext != src_ext => {
+            let content = export::extract(&doc.kind, &native, new_text)?;
+            let title = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            Some((target, export::render(&content, target, &title)?))
+        }
+        _ => None,
+    };
+    let label = match &exported {
+        Some((t, _)) => format!("{} → {}", doc.kind.label(), t.label()),
+        None => doc.kind.label(),
+    };
+    formats::write_bytes(exported.map(|(_, b)| b).as_deref().unwrap_or(&native), output)?;
+    Ok(label)
+}
+
 /// Pfad der Recover-Datei zu einer Ausgabe: `<name>.anonym.recover.json`.
 pub fn recover_path_for(output: &Path) -> PathBuf {
     let stem = output.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "ausgabe".into());
     output.with_file_name(format!("{stem}.recover.json"))
 }
 
-/// Standard-Ausgabepfad einer Rückübersetzung: `<name>.recovered.<ext>` (Zusatz `.anonym` entfällt).
-pub fn suggest_recovered(path: &Path) -> PathBuf {
+/// Standard-Ausgabepfad einer Rückübersetzung: `<name>.recovered.<ext>` (Zusatz `.anonym`
+/// entfällt); mit `target_ext` in einem anderen Format.
+pub fn suggest_recovered(path: &Path, target_ext: Option<&str>) -> PathBuf {
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "datei".into());
     let stem = stem.strip_suffix(".anonym").map(str::to_string).unwrap_or(stem);
-    let name = match path.extension() {
-        Some(e) => format!("{stem}.recovered.{}", e.to_string_lossy()),
+    let ext = target_ext.map(str::to_string).or_else(|| path.extension().map(|e| e.to_string_lossy().into_owned()));
+    let name = match ext {
+        Some(e) => format!("{stem}.recovered.{e}"),
         None => format!("{stem}.recovered"),
     };
     path.with_file_name(name)
 }
 
-/// Bearbeitete anonymisierte Datei mit Recover-Datei zurückübersetzen und im selben Format schreiben.
+/// Bearbeitete anonymisierte Datei mit Recover-Datei zurückübersetzen — im selben Format
+/// oder, bei anderer Endung der Ausgabe, exportiert.
 pub fn recover_file(path: &Path, key: &recover::RecoverFile, opts: &Options, output: &Path) -> Result<recover::RecoverResult, String> {
     let fallback = if opts.fallback_encoding.is_empty() { "windows-1252" } else { opts.fallback_encoding.as_str() };
     let doc = formats::open(path, fallback)?;
     let (new_text, mut result) = recover::restore_text(&doc.text, key);
-    let bytes = formats::render(&doc, &new_text)?;
-    formats::write_bytes(&bytes, output)?;
+    result.format = write_output(&doc, &new_text, path, output)?;
     result.output = output.to_string_lossy().into_owned();
-    result.format = doc.kind.label();
     Ok(result)
 }
 
@@ -375,7 +382,7 @@ mod tests {
         let surname = anon.lines().next().unwrap().trim_start_matches("Sehr geehrte Frau ").trim_end_matches(',').to_string();
         let edited = format!("{anon}\nNachtrag: {} hat zurückgerufen. Neue Kd-Nr 55555.\n", surname.to_uppercase());
         let edited_path = tmp("rec.anonym.txt", edited.as_bytes());
-        let recovered = suggest_recovered(&edited_path);
+        let recovered = suggest_recovered(&edited_path, None);
         assert!(recovered.to_string_lossy().ends_with("rec.recovered.txt"));
         let key_bytes = recover::seal(&applied.recover, Some("pw")).unwrap();
         let key = recover::open(&key_bytes, Some("pw")).unwrap();
@@ -388,7 +395,7 @@ mod tests {
         let csv = tmp("rec2.csv", "Kd-Nr;Name;E-Mail\n10482;Anna Berger;anna@example.org\n".as_bytes());
         let xlsx_out = suggest_output_as(&csv, None, "", Some("xlsx"));
         let applied2 = apply_file(&csv, &rules, &dicts, &opts, &[], &xlsx_out).unwrap();
-        let rec2 = suggest_recovered(&xlsx_out);
+        let rec2 = suggest_recovered(&xlsx_out, None);
         let r2 = recover_file(&xlsx_out, &applied2.recover, &opts, &rec2).unwrap();
         assert!(r2.restored >= 3, "{r2:?}");
         let back = export::extract(&formats::Kind::Xlsx, &std::fs::read(&rec2).unwrap(), "").unwrap();
@@ -396,6 +403,15 @@ mod tests {
             export::Content::Tables(t) => assert_eq!(t[0].rows[1], vec!["10482", "Anna Berger", "anna@example.org"]),
             _ => panic!(),
         }
+        // Rückübersetzung mit Formatwechsel: XLSX → CSV, DOCX, PDF
+        for ext in ["csv", "docx", "pdf"] {
+            let out = suggest_recovered(&xlsx_out, Some(ext));
+            assert!(out.to_string_lossy().ends_with(&format!("rec2.recovered.{ext}")));
+            let r = recover_file(&xlsx_out, &applied2.recover, &opts, &out).unwrap();
+            assert!(r.format.contains("→"), "{}", r.format);
+            assert!(!std::fs::read(&out).unwrap().is_empty());
+        }
+        assert_eq!(std::fs::read_to_string(suggest_recovered(&xlsx_out, Some("csv"))).unwrap().lines().nth(1).unwrap(), "10482;Anna Berger;anna@example.org");
     }
 
     #[test]
