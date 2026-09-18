@@ -81,7 +81,7 @@ const de: Content = {
       body: [
         'Der Reiter „Vorschau“ zeigt Original und Ausgabe nebeneinander, farbig nach Kategorie. Ein Klick auf eine Markierung nimmt die Fundstelle an oder lehnt sie ab.',
         '• „Anonymisiert speichern“ schreibt die Datei im selben Format als <name>.anonym.<endung> neben die Quelle (Zielordner und Namenszusatz: Einstellungen → Dateien).',
-        '• „Exportieren als“ schreibt dieselbe anonymisierte Datei in ein anderes Format: TXT, Markdown, HTML, CSV, TSV, JSON, Excel (XLSX), Word (DOCX), ODT, ODS, PDF oder RTF. „Speichern unter …“ bietet dieselben Formate im Dateidialog — die Endung entscheidet.',
+        '• „Exportieren als“ schreibt dieselbe anonymisierte Datei in ein anderes Format: TXT, Markdown, HTML, CSV, TSV, JSON, Excel (XLSX), Word (DOCX), ODT, ODS, PDF oder RTF — Name und Ort wählen Sie im Dateidialog. „Speichern unter …“ bietet dieselben Formate; die Endung entscheidet. Existiert die Ausgabe schon, fragt anonym: Überschreiben oder anderer Name.',
         '• Daneben entsteht ein Bericht als JSON: was wurde wodurch ersetzt, wie oft, mit welcher Datumsverschiebung.',
         '• Die Quelle wird nie überschrieben.',
       ],
@@ -254,7 +254,7 @@ const en: Content = {
       body: [
         'The “Preview” tab shows original and output side by side, coloured by category. Clicking a highlight accepts or rejects that finding.',
         '• “Save anonymised” writes the file in the same format as <name>.anonym.<ext> next to the source (output folder and suffix: Settings → Files).',
-        '• “Export as” writes the same anonymised file in another format: TXT, Markdown, HTML, CSV, TSV, JSON, Excel (XLSX), Word (DOCX), ODT, ODS, PDF or RTF. “Save as …” offers the same formats in the file dialog — the extension decides.',
+        '• “Export as” writes the same anonymised file in another format: TXT, Markdown, HTML, CSV, TSV, JSON, Excel (XLSX), Word (DOCX), ODT, ODS, PDF or RTF — you choose name and location in the file dialog. “Save as …” offers the same formats; the extension decides. If the output already exists, anonym asks: overwrite or another name.',
         '• A JSON report is written alongside: what was replaced by what, how often, with which date shift.',
         '• The source is never overwritten.',
       ],

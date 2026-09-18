@@ -98,7 +98,7 @@ const de = {
   applyAs: 'Speichern unter …',
   exportAs: 'Exportieren als',
   exportBtn: 'Exportieren',
-  exportHint: 'Anonymisierte Datei in einem anderen Format schreiben — neben die Quelle, mit Namenszusatz.',
+  exportHint: 'Anonymisierte Datei in einem anderen Format schreiben — Name und Ort wählen Sie im Dialog.',
   exportedTo: (name: string) => `Exportiert: ${name}`,
   outputs: 'Ausgaben',
   exportFormat: 'Exportformat',
@@ -263,6 +263,7 @@ const de = {
   // Dialoge & Meldungen
   confirmOverwriteText: (name: string) => `„${name}“ existiert bereits. Überschreiben?`,
   overwrite: 'Überschreiben',
+  otherName: 'Anderer Name …',
   savedTo: (name: string) => `Gespeichert: ${name}`,
   savedMany: (n: number) => `${n} Dateien gespeichert.`,
   addedToAllowlist: (w: string) => `„${w}“ steht jetzt auf der Ausnahmeliste.`,
@@ -366,7 +367,7 @@ const en: Dict = {
   applyAs: 'Save as …',
   exportAs: 'Export as',
   exportBtn: 'Export',
-  exportHint: 'Write the anonymised file in another format — next to the source, with the name suffix.',
+  exportHint: 'Write the anonymised file in another format — choose name and location in the dialog.',
   exportedTo: (name: string) => `Exported: ${name}`,
   outputs: 'Outputs',
   exportFormat: 'Export format',
@@ -525,6 +526,7 @@ const en: Dict = {
 
   confirmOverwriteText: (name: string) => `“${name}” already exists. Overwrite?`,
   overwrite: 'Overwrite',
+  otherName: 'Other name …',
   savedTo: (name: string) => `Saved: ${name}`,
   savedMany: (n: number) => `${n} files saved.`,
   addedToAllowlist: (w: string) => `“${w}” is now on the allowlist.`,

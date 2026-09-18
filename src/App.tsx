@@ -16,7 +16,7 @@ import { baseName, effective } from './util';
 type Tab = 'findings' | 'preview' | 'rules' | 'report';
 
 /** Bestätigungsdialog (window.confirm ist im WebView nicht verlässlich). */
-function ConfirmModal({ text, okLabel, cancelLabel, onOk, onClose }: { text: string; okLabel: string; cancelLabel: string; onOk: () => void; onClose: () => void }) {
+function ConfirmModal({ text, okLabel, cancelLabel, altLabel, onOk, onAlt, onClose }: { text: string; okLabel: string; cancelLabel: string; altLabel?: string; onOk: () => void; onAlt?: () => void; onClose: () => void }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -27,6 +27,7 @@ function ConfirmModal({ text, okLabel, cancelLabel, onOk, onClose }: { text: str
           <button className="ghost" onClick={onClose} autoFocus>
             {cancelLabel}
           </button>
+          {altLabel && onAlt && <button onClick={onAlt}>{altLabel}</button>}
           <button className="primary" onClick={onOk}>
             {okLabel}
           </button>
@@ -50,7 +51,7 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('findings');
   const [showSettings, setShowSettings] = useState(false);
-  const [confirm, setConfirm] = useState<{ text: string; ok?: string } | null>(null);
+  const [confirm, setConfirm] = useState<{ text: string; ok?: string; alt?: string } | null>(null);
   const [helpSignal, setHelpSignal] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [updateAvail, setUpdateAvail] = useState<UpdateInfo | null>(null);
@@ -75,19 +76,21 @@ export default function App() {
   }, []);
   const fail = useCallback((e: unknown) => showToast(String(e), true), [showToast]);
 
-  // Bestätigung als Promise
-  const confirmResolve = useRef<((ok: boolean) => void) | null>(null);
-  const onConfirm = useCallback(
-    (text: string, ok?: string) =>
-      new Promise<boolean>((resolve) => {
+  // Bestätigung als Promise: 'ok' | 'alt' (dritte Schaltfläche) | 'cancel'
+  type Answer = 'ok' | 'alt' | 'cancel';
+  const confirmResolve = useRef<((a: Answer) => void) | null>(null);
+  const ask = useCallback(
+    (text: string, ok?: string, alt?: string) =>
+      new Promise<Answer>((resolve) => {
         confirmResolve.current = resolve;
-        setConfirm({ text, ok });
+        setConfirm({ text, ok, alt });
       }),
     []
   );
-  const settleConfirm = (ok: boolean) => {
+  const onConfirm = useCallback((text: string, ok?: string) => ask(text, ok).then((a) => a === 'ok'), [ask]);
+  const settleConfirm = (a: Answer) => {
     setConfirm(null);
-    confirmResolve.current?.(ok);
+    confirmResolve.current?.(a);
     confirmResolve.current = null;
   };
 
@@ -269,17 +272,29 @@ export default function App() {
     async (entry: FileEntry, chooseTarget: boolean, ext?: string): Promise<boolean> => {
       if (!rules || !settings || !entry.analysis) return false;
       let output = await api.suggestOutput(entry.path, ext);
-      if (chooseTarget) {
-        const srcExt = entry.path.split('.').pop()?.toLowerCase() ?? '';
-        const filters = [
+      const srcExt = entry.path.split('.').pop()?.toLowerCase() ?? '';
+      // Dateidialog: gewünschtes Format zuerst, dann Ursprungsformat, dann alle Exporte
+      const pickPath = async (): Promise<string | null> => {
+        const all = [
           ...(srcExt ? [{ name: `${srcExt.toUpperCase()} (${t.outputTo})`, extensions: [srcExt] }] : []),
           ...targets.filter((x) => x.ext !== srcExt).map((x) => ({ name: x.label, extensions: [x.ext] })),
         ];
+        const filters = ext ? [...all.filter((f) => f.extensions[0] === ext), ...all.filter((f) => f.extensions[0] !== ext)] : all;
         const sel = await save({ defaultPath: output, filters });
+        return sel || null;
+      };
+      if (chooseTarget || ext) {
+        const sel = await pickPath();
         if (!sel) return false;
         output = sel;
       } else if (settings.confirmOverwrite && (await api.pathExists(output))) {
-        if (!(await onConfirm(t.confirmOverwriteText(baseName(output)), t.overwrite))) return false;
+        const a = await ask(t.confirmOverwriteText(baseName(output)), t.overwrite, t.otherName);
+        if (a === 'cancel') return false;
+        if (a === 'alt') {
+          const sel = await pickPath();
+          if (!sel) return false;
+          output = sel;
+        }
       }
       const list = Object.values(decisions[entry.path] ?? {});
       try {
@@ -293,7 +308,7 @@ export default function App() {
         return false;
       }
     },
-    [rules, settings, decisions, fail, onConfirm, t, targets]
+    [rules, settings, decisions, fail, ask, t, targets]
   );
 
   const applySelected = useCallback(
@@ -362,7 +377,7 @@ export default function App() {
             setSettingsBackup(null);
             setShowSettings(false);
           }
-          if (confirm) settleConfirm(false);
+          if (confirm) settleConfirm('cancel');
         }
         return;
       }
@@ -561,7 +576,7 @@ export default function App() {
         />
       )}
 
-      {confirm && <ConfirmModal text={confirm.text} okLabel={confirm.ok ?? t.ok} cancelLabel={t.cancel} onOk={() => settleConfirm(true)} onClose={() => settleConfirm(false)} />}
+      {confirm && <ConfirmModal text={confirm.text} okLabel={confirm.ok ?? t.ok} cancelLabel={t.cancel} altLabel={confirm.alt} onOk={() => settleConfirm('ok')} onAlt={() => settleConfirm('alt')} onClose={() => settleConfirm('cancel')} />}
 
       {updateAvail && (
         <div className="upd-banner">

@@ -156,6 +156,8 @@ pub fn suggest_output_as(path: &Path, out_dir: Option<&Path>, suffix: &str, targ
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "datei".into());
     let ext = target_ext.map(str::to_string).or_else(|| path.extension().map(|e| e.to_string_lossy().into_owned()));
     let suffix = if suffix.is_empty() { ".anonym" } else { suffix };
+    // Bereits anonymisierte Datei erneut speichern/exportieren: Zusatz nicht verdoppeln
+    let stem = if stem.ends_with(suffix) { stem[..stem.len() - suffix.len()].to_string() } else { stem };
     let name = match ext {
         Some(e) => format!("{stem}{suffix}.{e}"),
         None => format!("{stem}{suffix}"),
@@ -258,6 +260,8 @@ mod tests {
         assert!(a.findings.len() >= 9, "{:?}", a.findings.iter().map(|f| (&f.text, f.category)).collect::<Vec<_>>());
         let out = suggest_output(&path, None, "");
         assert!(out.to_string_lossy().ends_with("brief.anonym.txt"));
+        assert!(suggest_output_as(Path::new("/x/brief.anonym.txt"), None, "", Some("xlsx")).to_string_lossy().ends_with("/x/brief.anonym.xlsx"));
+        assert!(suggest_output(Path::new("/x/brief.anonym.txt"), None, "").to_string_lossy().ends_with("/x/brief.anonym.txt"));
         let applied = apply_file(&path, &rules, &dicts, &opts, &[], &out).unwrap();
         let result = std::fs::read_to_string(&out).unwrap();
         assert!(!result.contains("Berger"), "{result}");
