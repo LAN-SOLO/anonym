@@ -82,7 +82,7 @@ const de = {
   onboardText:
     'anonym findet Namen, Adressen, Kontonummern, Geburtsdaten und mehr — mit Wörterbüchern, Mustern und Prüfziffern statt KI. Sie sehen jede Fundstelle vor dem Schreiben und entscheiden, was ersetzt wird. Text, CSV, DOCX, XLSX und ODF kommen im selben Format zurück.',
   openFile: 'Datei öffnen',
-  supported: 'Text · Markdown · CSV/TSV · JSON · XML · HTML · DOCX · XLSX · ODT/ODS · Logs · EML',
+  supported: 'Liest: Text · Markdown · CSV/TSV · JSON · XML · HTML · DOCX · XLSX · ODT/ODS · Logs · EML — Exportiert: TXT · MD · HTML · CSV · TSV · JSON · XLSX · DOCX · ODT · ODS · PDF · RTF',
 
   // Ansicht
   tabFindings: 'Fundstellen',
@@ -96,6 +96,12 @@ const de = {
   reanalyze: 'Neu prüfen',
   applyFile: 'Anonymisiert speichern',
   applyAs: 'Speichern unter …',
+  exportAs: 'Exportieren als',
+  exportBtn: 'Exportieren',
+  exportHint: 'Anonymisierte Datei in einem anderen Format schreiben — neben die Quelle, mit Namenszusatz.',
+  exportedTo: (name: string) => `Exportiert: ${name}`,
+  outputs: 'Ausgaben',
+  exportFormat: 'Exportformat',
   applying: 'Schreibt …',
   outputTo: 'Ausgabe',
   noFindings: 'Keine Fundstellen — die Datei enthält nach den aktiven Regeln nichts Persönliches.',
@@ -345,7 +351,7 @@ const en: Dict = {
   onboardText:
     'anonym finds names, addresses, account numbers, birth dates and more — with dictionaries, patterns and checksums instead of AI. You see every finding before anything is written and decide what gets replaced. Text, CSV, DOCX, XLSX and ODF come back in the same format.',
   openFile: 'Open file',
-  supported: 'Text · Markdown · CSV/TSV · JSON · XML · HTML · DOCX · XLSX · ODT/ODS · logs · EML',
+  supported: 'Reads: text · Markdown · CSV/TSV · JSON · XML · HTML · DOCX · XLSX · ODT/ODS · logs · EML — Exports: TXT · MD · HTML · CSV · TSV · JSON · XLSX · DOCX · ODT · ODS · PDF · RTF',
 
   tabFindings: 'Findings',
   tabPreview: 'Preview',
@@ -358,6 +364,12 @@ const en: Dict = {
   reanalyze: 'Re-analyse',
   applyFile: 'Save anonymised',
   applyAs: 'Save as …',
+  exportAs: 'Export as',
+  exportBtn: 'Export',
+  exportHint: 'Write the anonymised file in another format — next to the source, with the name suffix.',
+  exportedTo: (name: string) => `Exported: ${name}`,
+  outputs: 'Outputs',
+  exportFormat: 'Export format',
   applying: 'Writing …',
   outputTo: 'Output',
   noFindings: 'No findings — under the active rules this file contains nothing personal.',

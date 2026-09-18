@@ -42,6 +42,7 @@ fn main() {
             commands::analyze_file,
             commands::apply_file,
             commands::suggest_output,
+            commands::export_targets,
             commands::store_info,
             commands::store_clear,
             commands::store_export,

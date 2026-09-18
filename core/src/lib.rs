@@ -8,6 +8,7 @@ pub mod csv;
 pub mod dates;
 pub mod detect;
 pub mod dict;
+pub mod export;
 pub mod formats;
 pub mod model;
 pub mod pseudo;
@@ -147,8 +148,13 @@ pub struct Applied {
 
 /// Standard-Ausgabepfad: `<name>.anonym.<ext>` neben der Quelle (oder im Zielordner).
 pub fn suggest_output(path: &Path, out_dir: Option<&Path>, suffix: &str) -> PathBuf {
+    suggest_output_as(path, out_dir, suffix, None)
+}
+
+/// Ausgabepfad mit anderer Endung (Export in ein anderes Format).
+pub fn suggest_output_as(path: &Path, out_dir: Option<&Path>, suffix: &str, target_ext: Option<&str>) -> PathBuf {
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "datei".into());
-    let ext = path.extension().map(|e| e.to_string_lossy().into_owned());
+    let ext = target_ext.map(str::to_string).or_else(|| path.extension().map(|e| e.to_string_lossy().into_owned()));
     let suffix = if suffix.is_empty() { ".anonym" } else { suffix };
     let name = match ext {
         Some(e) => format!("{stem}{suffix}.{e}"),
@@ -186,7 +192,23 @@ pub fn apply_file(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Optio
         edits.push((f.bstart, f.bend, replacement));
     }
     let new_text = apply::splice(&p.doc.text, &edits);
-    formats::write(&p.doc, &new_text, output)?;
+    let native = formats::render(&p.doc, &new_text)?;
+    // Andere Endung als die Quelle → Export in dieses Format
+    let src_ext = formats::extension(path);
+    let out_ext = formats::extension(output);
+    let exported = match export::Target::from_ext(&out_ext) {
+        Some(target) if out_ext != src_ext => {
+            let content = export::extract(&p.doc.kind, &native, &new_text)?;
+            let title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            Some((target, export::render(&content, target, &title)?))
+        }
+        _ => None,
+    };
+    let format_label = match &exported {
+        Some((t, _)) => format!("{} → {}", p.doc.kind.label(), t.label()),
+        None => p.doc.kind.label(),
+    };
+    formats::write_bytes(exported.map(|(_, b)| b).as_deref().unwrap_or(&native), output)?;
 
     let mut list: Vec<ReportEntry> = entries
         .into_iter()
@@ -199,7 +221,7 @@ pub fn apply_file(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Optio
         created: chrono::Local::now().to_rfc3339(),
         source: path.to_string_lossy().into_owned(),
         output: output.to_string_lossy().into_owned(),
-        format: p.doc.kind.label(),
+        format: format_label,
         rules: rules.name.clone(),
         world: rules.world.clone(),
         date_shift_days: p.pseudo.date_offset_days,
@@ -261,6 +283,42 @@ mod tests {
         // Determinismus
         let again = analyze(&path, &rules, &dicts, &opts).unwrap();
         assert_eq!(again.findings, a.findings);
+    }
+
+    #[test]
+    fn export_other_formats() {
+        let path = tmp("export.csv", "Kd-Nr;Name;E-Mail\n10482;Anna Berger;anna@example.org\n".as_bytes());
+        let dicts = Dictionaries::builtin();
+        let rules = Rules::default();
+        let opts = Options::default();
+        for ext in ["xlsx", "docx", "odt", "ods", "pdf", "html", "md", "json", "txt", "rtf", "tsv"] {
+            let out = suggest_output_as(&path, None, "", Some(ext));
+            assert!(out.to_string_lossy().ends_with(&format!("export.anonym.{ext}")));
+            let applied = apply_file(&path, &rules, &dicts, &opts, &[], &out).unwrap();
+            assert!(applied.report.format.contains("→"), "{ext}: {}", applied.report.format);
+            let bytes = std::fs::read(&out).unwrap();
+            assert!(!bytes.is_empty(), "{ext}");
+            if ext == "xlsx" {
+                let back = export::extract(&formats::Kind::Xlsx, &bytes, "").unwrap();
+                match back {
+                    export::Content::Tables(t) => {
+                        assert_eq!(t[0].rows[0], vec!["Kd-Nr", "Name", "E-Mail"]);
+                        assert_ne!(t[0].rows[1][1], "Anna Berger");
+                        assert_ne!(t[0].rows[1][0], "10482");
+                    }
+                    _ => panic!(),
+                }
+            }
+        }
+        // Text-Quelle nach XLSX: eine Zeile je Reihe
+        let tpath = tmp("export.txt", LETTER.as_bytes());
+        let out = suggest_output_as(&tpath, None, "", Some("xlsx"));
+        apply_file(&tpath, &rules, &dicts, &opts, &[], &out).unwrap();
+        let back = export::extract(&formats::Kind::Xlsx, &std::fs::read(&out).unwrap(), "").unwrap();
+        match back {
+            export::Content::Tables(t) => assert!(t[0].rows.len() >= 8),
+            _ => panic!(),
+        }
     }
 
     #[test]

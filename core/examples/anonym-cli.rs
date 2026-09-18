@@ -1,12 +1,15 @@
-//! Kleiner Kommandozeilen-Lauf über den Kern: `cargo run --example anonym-cli -- <datei> [--apply]`
-//! Druckt die Fundstellen und schreibt bei `--apply` `<name>.anonym.<ext>` daneben.
+//! Kleiner Kommandozeilen-Lauf über den Kern:
+//! `cargo run --example anonym-cli -- <datei> [--apply] [--export=xlsx,pdf,…]`
+//! Druckt die Fundstellen, schreibt bei `--apply` `<name>.anonym.<ext>` daneben und
+//! bei `--export` zusätzlich die genannten Formate.
 
-use anonym_core::{analyze, apply_file, suggest_output, Dictionaries, Options, Rules};
+use anonym_core::{analyze, apply_file, suggest_output, suggest_output_as, Dictionaries, Options, Rules};
 use std::path::Path;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let apply = args.iter().any(|a| a == "--apply");
+    let exports: Vec<String> = args.iter().filter_map(|a| a.strip_prefix("--export=")).flat_map(|v| v.split(',').map(|s| s.trim().to_string())).collect();
     let files: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
     let dicts = Dictionaries::builtin();
     let rules = Rules::default();
@@ -27,6 +30,13 @@ fn main() {
                     match apply_file(path, &rules, &dicts, &opts, &[], &out) {
                         Ok(r) => println!("   → {} ({} Ersetzungen)", r.output.display(), r.report.replaced),
                         Err(e) => println!("   FEHLER: {e}"),
+                    }
+                }
+                for ext in &exports {
+                    let out = suggest_output_as(path, None, "", Some(ext));
+                    match apply_file(path, &rules, &dicts, &opts, &[], &out) {
+                        Ok(r) => println!("   → {} [{}]", r.output.display(), r.report.format),
+                        Err(e) => println!("   FEHLER ({ext}): {e}"),
                     }
                 }
             }

@@ -3,7 +3,7 @@ import { Dict, Lang } from '../i18n';
 import { IconExternalLink } from '../icons';
 import { baseName, categoryLabel, dirName, fmtDateTime } from '../util';
 
-export function ReportView({ result, t, lang, onOpen }: { result: ApplyResult | undefined; t: Dict; lang: Lang; onOpen: (path: string) => void }) {
+export function ReportView({ result, outputs, t, lang, onOpen }: { result: ApplyResult | undefined; outputs: ApplyResult[]; t: Dict; lang: Lang; onOpen: (path: string) => void }) {
   if (!result) return <div className="empty">{t.reportNone}</div>;
   const r = result.report;
   return (
@@ -55,6 +55,20 @@ export function ReportView({ result, t, lang, onOpen }: { result: ApplyResult | 
         <div className="note">
           {t.reportCreated}: {fmtDateTime(r.created, lang)} · anonym {r.version}
         </div>
+        {outputs.length > 1 && (
+          <>
+            <h3 style={{ marginTop: 12 }}>{t.outputs}</h3>
+            {outputs.map((o) => (
+              <div key={o.output} className="pathrow">
+                <span className="chip mini dim">{o.report.format}</span>
+                <span className="mono">{baseName(o.output)}</span>
+                <button onClick={() => onOpen(dirName(o.output))}>
+                  <IconExternalLink size={11} /> {t.reportOpenFolder}
+                </button>
+              </div>
+            ))}
+          </>
+        )}
       </div>
       <div className="panel" style={{ marginTop: 12 }}>
         <h3>{t.reportEntries}</h3>

@@ -3,6 +3,7 @@
 use crate::settings::{self, Settings};
 use crate::state::AppState;
 use crate::store;
+use anonym_core::export::Target;
 use anonym_core::{Analysis, Decision, Options, Report, Rules, WORLD_IDS};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -25,6 +26,13 @@ pub struct ApplyResult {
     pub output: String,
     pub report_path: Option<String>,
     pub report: Report,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportTarget {
+    pub ext: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -112,10 +120,15 @@ pub async fn analyze_file(st: State<'_, Shared>, path: String, rules: Rules) -> 
 }
 
 #[tauri::command]
-pub fn suggest_output(st: State<'_, Shared>, path: String) -> String {
+pub fn suggest_output(st: State<'_, Shared>, path: String, ext: Option<String>) -> String {
     let s = st.settings_clone();
     let dir = if s.output_dir.trim().is_empty() { None } else { Some(PathBuf::from(s.output_dir.trim())) };
-    anonym_core::suggest_output(Path::new(&path), dir.as_deref(), &s.output_suffix).to_string_lossy().into_owned()
+    anonym_core::suggest_output_as(Path::new(&path), dir.as_deref(), &s.output_suffix, ext.as_deref()).to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+pub fn export_targets() -> Vec<ExportTarget> {
+    Target::ALL.iter().map(|t| ExportTarget { ext: t.ext().into(), label: t.label().into() }).collect()
 }
 
 #[tauri::command]

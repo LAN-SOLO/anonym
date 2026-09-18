@@ -11,6 +11,8 @@ export interface FileEntry {
   analysis?: Analysis;
   error?: string;
   result?: ApplyResult;
+  /** Alle bisher geschriebenen Ausgaben (Ursprungsformat und Exporte). */
+  outputs?: ApplyResult[];
 }
 
 function isTable(path: string): boolean {

@@ -139,6 +139,11 @@ export interface ApplyResult {
   report: Report;
 }
 
+export interface ExportTarget {
+  ext: string;
+  label: string;
+}
+
 export interface StoreInfo {
   path: string;
   entries: number;
@@ -208,7 +213,8 @@ export const api = {
 
   // Analyse & Anwendung
   analyzeFile: (path: string, rules: Rules) => call<Analysis>('analyze_file', { path, rules }),
-  suggestOutput: (path: string) => call<string>('suggest_output', { path }),
+  suggestOutput: (path: string, ext?: string) => call<string>('suggest_output', { path, ext: ext ?? null }),
+  exportTargets: () => call<ExportTarget[]>('export_targets'),
   applyFile: (path: string, rules: Rules, decisions: Decision[], output: string) =>
     call<ApplyResult>('apply_file', { path, rules, decisions, output }),
 

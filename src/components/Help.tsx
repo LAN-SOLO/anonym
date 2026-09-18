@@ -81,6 +81,7 @@ const de: Content = {
       body: [
         'Der Reiter „Vorschau“ zeigt Original und Ausgabe nebeneinander, farbig nach Kategorie. Ein Klick auf eine Markierung nimmt die Fundstelle an oder lehnt sie ab.',
         '• „Anonymisiert speichern“ schreibt die Datei im selben Format als <name>.anonym.<endung> neben die Quelle (Zielordner und Namenszusatz: Einstellungen → Dateien).',
+        '• „Exportieren als“ schreibt dieselbe anonymisierte Datei in ein anderes Format: TXT, Markdown, HTML, CSV, TSV, JSON, Excel (XLSX), Word (DOCX), ODT, ODS, PDF oder RTF. „Speichern unter …“ bietet dieselben Formate im Dateidialog — die Endung entscheidet.',
         '• Daneben entsteht ein Bericht als JSON: was wurde wodurch ersetzt, wie oft, mit welcher Datumsverschiebung.',
         '• Die Quelle wird nie überschrieben.',
       ],
@@ -150,7 +151,8 @@ const de: Content = {
         '• XLSX: Textzellen (sharedStrings und Inline-Strings) aller Blätter. Zahlen- und Datumszellen bleiben unverändert — eine Kundennummer, die als Zahl gespeichert ist, wird in dieser Version nicht ersetzt.',
         '• ODT/ODS: alle Textknoten in content.xml.',
         '• Kodierungen: UTF-8 (mit und ohne BOM), UTF-16 mit BOM, sonst Windows-1252 als Rückfall; andere Codepages (ISO-8859-15, Windows-1250, Macintosh, KOI8-R) in Einstellungen → Dateien (masked).',
-        'Alte Formate (DOC, XLS, WordPerfect, Lotus, dBase, EBCDIC …), PDF-Textebene und Format-Beschreibungen per JSON folgen per Update.',
+        '• Export: Jede anonymisierte Datei lässt sich zusätzlich als TXT, Markdown, HTML, CSV, TSV, JSON, XLSX, DOCX, ODT, ODS, PDF oder RTF schreiben. Tabellen (CSV, XLSX, ODS) werden in Textformaten zu Tabellen mit Spalten, in JSON zu einer Liste von Objekten je Zeile (Kopfzeile = Schlüssel); Texte werden in Tabellenformaten zu einer Zeile je Reihe. Alle Blätter einer Arbeitsmappe werden übernommen. PDF nutzt eine feste Schrift mit Windows-1252-Zeichensatz — Zeichen außerhalb (z. B. Kyrillisch, CJK) erscheinen als „?“.',
+        'Alte Formate (DOC, XLS, WordPerfect, Lotus, dBase, EBCDIC …) als Eingabe, PDF-Textebene und Format-Beschreibungen per JSON folgen per Update.',
       ],
     },
     {
@@ -252,6 +254,7 @@ const en: Content = {
       body: [
         'The “Preview” tab shows original and output side by side, coloured by category. Clicking a highlight accepts or rejects that finding.',
         '• “Save anonymised” writes the file in the same format as <name>.anonym.<ext> next to the source (output folder and suffix: Settings → Files).',
+        '• “Export as” writes the same anonymised file in another format: TXT, Markdown, HTML, CSV, TSV, JSON, Excel (XLSX), Word (DOCX), ODT, ODS, PDF or RTF. “Save as …” offers the same formats in the file dialog — the extension decides.',
         '• A JSON report is written alongside: what was replaced by what, how often, with which date shift.',
         '• The source is never overwritten.',
       ],
@@ -321,7 +324,8 @@ const en: Content = {
         '• XLSX: text cells (shared strings and inline strings) of all sheets. Numeric and date cells stay unchanged — a customer number stored as a number is not replaced in this version.',
         '• ODT/ODS: all text nodes in content.xml.',
         '• Encodings: UTF-8 (with and without BOM), UTF-16 with BOM, otherwise Windows-1252 as fallback; other code pages (ISO-8859-15, Windows-1250, Macintosh, KOI8-R) under Settings → Files (masked).',
-        'Legacy formats (DOC, XLS, WordPerfect, Lotus, dBase, EBCDIC …), the PDF text layer and JSON format descriptions follow via updates.',
+        '• Export: every anonymised file can additionally be written as TXT, Markdown, HTML, CSV, TSV, JSON, XLSX, DOCX, ODT, ODS, PDF or RTF. Tables (CSV, XLSX, ODS) become tables with columns in text formats and a list of objects per row in JSON (header = keys); texts become one row per line in table formats. All sheets of a workbook are carried over. PDF uses a fixed font with the Windows-1252 character set — characters outside it (e.g. Cyrillic, CJK) appear as “?”.',
+        'Legacy formats (DOC, XLS, WordPerfect, Lotus, dBase, EBCDIC …) as input, the PDF text layer and JSON format descriptions follow via updates.',
       ],
     },
     {

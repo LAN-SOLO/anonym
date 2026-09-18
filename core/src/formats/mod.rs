@@ -72,12 +72,27 @@ pub fn open(path: &Path, fallback_encoding: &str) -> Result<Document, String> {
     }
 }
 
+/// Ausgabe im Ursprungsformat als Bytes.
+pub fn render(doc: &Document, new_text: &str) -> Result<Vec<u8>, String> {
+    match &doc.xml {
+        Some(container) => xml::rebuild(container, &doc.text, new_text),
+        None => Ok(text::encode(new_text, &doc.encoding)),
+    }
+}
+
+/// Bytes atomar schreiben (Temp-Datei + rename).
+pub fn write_bytes(bytes: &[u8], out: &Path) -> Result<(), String> {
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Ordner anlegen fehlgeschlagen: {e}"))?;
+    }
+    let tmp = out.with_extension("anonym-tmp");
+    std::fs::write(&tmp, bytes).map_err(|e| format!("Schreiben fehlgeschlagen: {e}"))?;
+    std::fs::rename(&tmp, out).map_err(|e| format!("Umbenennen fehlgeschlagen: {e}"))
+}
+
 /// Ausgabe schreiben: neuer virtueller Text → Datei im Ursprungsformat.
 pub fn write(doc: &Document, new_text: &str, out: &Path) -> Result<(), String> {
-    let bytes = match &doc.xml {
-        Some(container) => xml::rebuild(container, &doc.text, new_text)?,
-        None => text::encode(new_text, &doc.encoding),
-    };
+    let bytes = render(doc, new_text)?;
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Ordner anlegen fehlgeschlagen: {e}"))?;
     }

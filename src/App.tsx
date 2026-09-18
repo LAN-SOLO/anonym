@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { Decision, FILE_EXTENSIONS, Rules, Settings, UpdateInfo, api, defaultSettings } from './api';
+import { Decision, ExportTarget, FILE_EXTENSIONS, Rules, Settings, UpdateInfo, api, defaultSettings } from './api';
 import { dicts, Lang } from './i18n';
 import { Findings } from './components/Findings';
 import { Help } from './components/Help';
@@ -57,6 +57,8 @@ export default function App() {
   const [installing, setInstalling] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [targets, setTargets] = useState<ExportTarget[]>([]);
+  const [exportExt, setExportExt] = useState('xlsx');
   const toastTimer = useRef<number | undefined>(undefined);
   const rulesTimer = useRef<number | undefined>(undefined);
   const rulesRef = useRef<Rules | null>(null);
@@ -164,6 +166,7 @@ export default function App() {
       })
       .catch(() => setSettings({ ...defaultSettings }));
     api.getRules().then(setRules).catch(fail);
+    api.exportTargets().then(setTargets).catch(() => {});
   }, [fail]);
 
   // Drag & Drop aus dem Finder/Explorer
@@ -261,13 +264,18 @@ export default function App() {
   };
 
   // --- Speichern ---------------------------------------------------------------
+  /** Speichern: im Ursprungsformat (ext = undefined), als Export (ext) oder per Dialog (chooseTarget). */
   const applyOne = useCallback(
-    async (entry: FileEntry, chooseTarget: boolean): Promise<boolean> => {
+    async (entry: FileEntry, chooseTarget: boolean, ext?: string): Promise<boolean> => {
       if (!rules || !settings || !entry.analysis) return false;
-      let output = await api.suggestOutput(entry.path);
+      let output = await api.suggestOutput(entry.path, ext);
       if (chooseTarget) {
-        const ext = entry.path.split('.').pop() ?? '';
-        const sel = await save({ defaultPath: output, filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : undefined });
+        const srcExt = entry.path.split('.').pop()?.toLowerCase() ?? '';
+        const filters = [
+          ...(srcExt ? [{ name: `${srcExt.toUpperCase()} (${t.outputTo})`, extensions: [srcExt] }] : []),
+          ...targets.filter((x) => x.ext !== srcExt).map((x) => ({ name: x.label, extensions: [x.ext] })),
+        ];
+        const sel = await save({ defaultPath: output, filters });
         if (!sel) return false;
         output = sel;
       } else if (settings.confirmOverwrite && (await api.pathExists(output))) {
@@ -276,25 +284,27 @@ export default function App() {
       const list = Object.values(decisions[entry.path] ?? {});
       try {
         const res = await api.applyFile(entry.path, rules, list, output);
-        setFiles((fs) => fs.map((f) => (f.path === entry.path ? { ...f, status: 'done', result: res } : f)));
+        setFiles((fs) =>
+          fs.map((f) => (f.path === entry.path ? { ...f, status: 'done', result: res, outputs: [...(f.outputs ?? []).filter((o) => o.output !== res.output), res] } : f))
+        );
         return true;
       } catch (e) {
         fail(e);
         return false;
       }
     },
-    [rules, settings, decisions, fail, onConfirm, t]
+    [rules, settings, decisions, fail, onConfirm, t, targets]
   );
 
   const applySelected = useCallback(
-    async (chooseTarget = false) => {
+    async (chooseTarget = false, ext?: string) => {
       const entry = files.find((f) => f.path === selected);
       if (!entry || !entry.analysis || busy) return;
       setBusy(true);
-      const ok = await applyOne(entry, chooseTarget);
+      const ok = await applyOne(entry, chooseTarget, ext);
       setBusy(false);
       if (ok) {
-        showToast(t.savedTo(baseName(entry.path)));
+        showToast(ext ? t.exportedTo(`${baseName(entry.path)} → ${ext.toUpperCase()}`) : t.savedTo(baseName(entry.path)));
         setTab('report');
       }
     },
@@ -492,7 +502,7 @@ export default function App() {
                 )}
                 {tab === 'preview' && analysis && current && <Preview text={analysis.text} findings={analysis.findings} decisions={curDecisions} t={t} onToggle={(id) => toggle(current.path, id)} />}
                 {tab === 'rules' && <RulesView rules={rules} masked={masked} t={t} onChange={changeRules} onToast={showToast} onFail={fail} />}
-                {tab === 'report' && <ReportView result={current?.result} t={t} lang={lang} onOpen={(p) => api.openPath(p).catch(fail)} />}
+                {tab === 'report' && <ReportView result={current?.result} outputs={current?.outputs ?? []} t={t} lang={lang} onOpen={(p) => api.openPath(p).catch(fail)} />}
                 {(tab === 'findings' || tab === 'preview') && current && !analysis && current.status !== 'error' && <div className="empty">{t.stAnalyzing}</div>}
               </div>
               {current && analysis && tab !== 'rules' && (
@@ -506,6 +516,19 @@ export default function App() {
                       {t.outputTo}: {baseName(current.result.output)}
                     </span>
                   )}
+                  <span className="exportgroup" title={t.exportHint}>
+                    <span className="lbl">{t.exportAs}</span>
+                    <select value={exportExt} onChange={(e) => setExportExt(e.target.value)}>
+                      {targets.map((x) => (
+                        <option key={x.ext} value={x.ext}>
+                          {x.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button disabled={busy} onClick={() => applySelected(false, exportExt)}>
+                      {t.exportBtn}
+                    </button>
+                  </span>
                   <button disabled={busy} onClick={() => applySelected(true)}>
                     {t.applyAs}
                   </button>

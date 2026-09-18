@@ -566,6 +566,10 @@ html[data-theme='light'] {
 }
 .actionbar .grow { flex: 1; }
 .actionbar .mono { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+.exportgroup { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius); padding: 2px 4px 2px 8px; }
+.exportgroup .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); }
+.exportgroup select { width: auto; padding: 3px 6px; font-size: 11.5px; }
+.exportgroup button { padding: 3px 8px; font-size: 11.5px; }
 
 .onboard { margin: auto; max-width: 560px; padding: 40px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; }
 .onboard h2 { font-size: 15px; margin-bottom: 12px; }
