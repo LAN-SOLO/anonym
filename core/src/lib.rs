@@ -260,8 +260,10 @@ mod tests {
         assert!(a.findings.len() >= 9, "{:?}", a.findings.iter().map(|f| (&f.text, f.category)).collect::<Vec<_>>());
         let out = suggest_output(&path, None, "");
         assert!(out.to_string_lossy().ends_with("brief.anonym.txt"));
-        assert!(suggest_output_as(Path::new("/x/brief.anonym.txt"), None, "", Some("xlsx")).to_string_lossy().ends_with("/x/brief.anonym.xlsx"));
-        assert!(suggest_output(Path::new("/x/brief.anonym.txt"), None, "").to_string_lossy().ends_with("/x/brief.anonym.txt"));
+        // Pfadtrenner sind plattformabhängig — nur den Dateinamen prüfen
+        let name = |p: PathBuf| p.file_name().unwrap().to_string_lossy().into_owned();
+        assert_eq!(name(suggest_output_as(Path::new("/x/brief.anonym.txt"), None, "", Some("xlsx"))), "brief.anonym.xlsx");
+        assert_eq!(name(suggest_output(Path::new("/x/brief.anonym.txt"), None, "")), "brief.anonym.txt");
         let applied = apply_file(&path, &rules, &dicts, &opts, &[], &out).unwrap();
         let result = std::fs::read_to_string(&out).unwrap();
         assert!(!result.contains("Berger"), "{result}");
