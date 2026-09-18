@@ -6,7 +6,7 @@ use crate::checksum;
 use crate::csv;
 use crate::dates;
 use crate::dict::Dictionaries;
-use crate::formats::ForcedLine;
+use crate::formats::{CellRef, ForcedLine};
 use crate::model::{Category, CustomPattern, CustomWords, Gender, NamePart, Rules, Source};
 use regex::Regex;
 use std::sync::OnceLock;
@@ -164,7 +164,7 @@ fn build_person(text: &str, toks: &[Tok], d: &Dictionaries, gender_hint: Gender)
     for (i, t) in toks.iter().enumerate() {
         let s = &text[t.start..t.end];
         let lower = s.to_lowercase();
-        let part = if PARTICLES.contains(&lower.as_str()) {
+        let part = if PARTICLES.contains(&lower.as_str()) && i + 1 < n {
             NamePart::Keep { text: s.to_string() }
         } else if i == n - 1 && n > 1 {
             NamePart::Last { text: s.to_string() }
@@ -416,7 +416,7 @@ fn person_from_cell(text: &str, start: usize, end: usize, d: &Dictionaries, hint
         let lower = s.to_lowercase();
         let first = d.first_name(s);
         let part = match hint {
-            _ if PARTICLES.contains(&lower.as_str()) => NamePart::Keep { text: s.to_string() },
+            _ if PARTICLES.contains(&lower.as_str()) && i + 1 < n => NamePart::Keep { text: s.to_string() },
             csv::PersonHint::First => NamePart::First { text: s.to_string(), gender: first.map(|f| f.gender).unwrap_or(Gender::U) },
             csv::PersonHint::Last => NamePart::Last { text: s.to_string() },
             csv::PersonHint::Full => {
@@ -468,12 +468,10 @@ fn typed_rows(text: &str, rows: &[Vec<csv::Cell>], d: &Dictionaries, out: &mut V
     if rows.len() < 2 {
         return;
     }
-    let header = &rows[0];
+    let Some(hi) = csv::header_row_index(text, rows) else { return };
+    let header = &rows[hi];
     let typed: Vec<Option<(Category, csv::PersonHint)>> = header.iter().map(|c| csv::column_category(text[c.start..c.end].trim())).collect();
-    if typed.iter().all(|t| t.is_none()) {
-        return;
-    }
-    for row in rows.iter().skip(1) {
+    for row in rows.iter().skip(hi + 1) {
         for (ci, cell) in row.iter().enumerate() {
             let Some(Some((cat, hint))) = typed.get(ci) else { continue };
             let raw = &text[cell.start..cell.end];
@@ -523,8 +521,68 @@ fn detect_forced(text: &str, forced: &[ForcedLine], d: &Dictionaries, out: &mut 
     }
 }
 
+/// Sieht eine Zelle wie ein Personenname aus? 1–4 kapitalisierte Wörter (Bindestrich erlaubt),
+/// keine Ziffern, nicht komplett groß, höchstens 40 Zeichen.
+fn looks_like_name(cell: &str) -> bool {
+    let t = cell.trim();
+    if t.is_empty() || t.chars().count() > 40 || t.chars().any(|c| c.is_ascii_digit()) || is_all_caps(t) {
+        return false;
+    }
+    let words: Vec<&str> = t.split_whitespace().collect();
+    if words.is_empty() || words.len() > 4 {
+        return false;
+    }
+    words.iter().all(|w| {
+        let w = w.trim_matches(|c: char| c == ',' || c == '.');
+        w.chars().count() >= 2 && w.chars().all(|c| c.is_alphabetic() || c == '-' || c == '\'' || c == '’') && (is_capitalized(w) || PARTICLES.contains(&w.to_lowercase().as_str()))
+    })
+}
+
+/// Mehrheits-Typisierung: Spalten, in denen mindestens 40 % der Zellen (ab drei) als Person
+/// erkannt wurden, gelten als Namensspalte — alle weiteren namensartigen Zellen werden Personen,
+/// auch mit Vor- und Nachnamen, die in keinem Wörterbuch stehen.
+fn infer_person_columns(text: &str, cells: &[(usize, usize, String)], raw: &mut Vec<RawMatch>, d: &Dictionaries) {
+    if cells.is_empty() {
+        return;
+    }
+    let person_ranges: Vec<(usize, usize)> = raw.iter().filter(|m| m.category == Category::Person).map(|m| (m.bstart, m.bend)).collect();
+    let mut per_col: std::collections::HashMap<&str, (usize, usize)> = std::collections::HashMap::new();
+    for (s, e, col) in cells {
+        if text[*s..*e].trim().is_empty() {
+            continue;
+        }
+        let hit = person_ranges.iter().any(|(ps, pe)| *ps < *e && *pe > *s);
+        let ent = per_col.entry(col.as_str()).or_insert((0, 0));
+        ent.0 += 1;
+        if hit {
+            ent.1 += 1;
+        }
+    }
+    let name_cols: std::collections::HashSet<&str> = per_col.iter().filter(|(_, (n, hits))| *hits >= 3 && *hits * 10 >= *n * 4).map(|(c, _)| *c).collect();
+    if name_cols.is_empty() {
+        return;
+    }
+    for (s, e, col) in cells {
+        if !name_cols.contains(col.as_str()) {
+            continue;
+        }
+        let raw_cell = &text[*s..*e];
+        let trimmed = raw_cell.trim();
+        if !looks_like_name(trimmed) {
+            continue;
+        }
+        let ts = *s + (raw_cell.len() - raw_cell.trim_start().len());
+        let te = ts + trimmed.len();
+        // Bereits (teilweise) erkannt? Dann die Zelle als Ganzes nehmen, sonst neu.
+        raw.retain(|m| !(m.category == Category::Person && m.bstart < te && m.bend > ts));
+        let mut m = person_from_cell(text, ts, te, d, csv::PersonHint::Full);
+        m.confidence = 75;
+        raw.push(m);
+    }
+}
+
 /// Alle Treffer für einen Text — bereits nach Priorität entflochten und nach Position sortiert.
-pub fn detect(text: &str, rules: &Rules, d: &Dictionaries, csv_delimiter: Option<char>, forced: &[ForcedLine], notes: &mut Vec<String>) -> Vec<RawMatch> {
+pub fn detect(text: &str, rules: &Rules, d: &Dictionaries, csv_delimiter: Option<char>, forced: &[ForcedLine], cell_refs: &[CellRef], notes: &mut Vec<String>) -> Vec<RawMatch> {
     let mut raw: Vec<RawMatch> = Vec::new();
     detect_persons(text, d, &mut raw);
     detect_patterns(text, d, &mut raw);
@@ -532,9 +590,34 @@ pub fn detect(text: &str, rules: &Rules, d: &Dictionaries, csv_delimiter: Option
     if rules.column_typing {
         match csv_delimiter {
             Some(delim) => detect_columns(text, delim, d, &mut raw),
-            None if forced.is_empty() => detect_fixed_width(text, d, &mut raw),
+            None if forced.is_empty() && cell_refs.is_empty() => detect_fixed_width(text, d, &mut raw),
             None => detect_forced(text, forced, d, &mut raw),
         }
+        // Zellen → Spalten für die Mehrheits-Typisierung
+        let mut cells: Vec<(usize, usize, String)> = Vec::new();
+        if let Some(delim) = csv_delimiter {
+            let rows = csv::cells(text, delim);
+            let hi = csv::header_row_index(text, &rows).unwrap_or(0);
+            for row in rows.iter().skip(hi + 1) {
+                for (ci, c) in row.iter().enumerate() {
+                    cells.push((c.start, c.end, format!("csv:{ci}")));
+                }
+            }
+        } else if !cell_refs.is_empty() {
+            let mut starts: Vec<usize> = vec![0];
+            for (i, b) in text.bytes().enumerate() {
+                if b == b'\n' {
+                    starts.push(i + 1);
+                }
+            }
+            for c in cell_refs {
+                if let Some(&s) = starts.get(c.line) {
+                    let e = text[s..].find('\n').map(|i| s + i).unwrap_or(text.len());
+                    cells.push((s, e, c.column.clone()));
+                }
+            }
+        }
+        infer_person_columns(text, &cells, &mut raw, d);
     }
 
     // Abgeschaltete Kategorien
@@ -583,7 +666,7 @@ mod tests {
     fn run(text: &str) -> Vec<(Category, String)> {
         let d = Dictionaries::builtin();
         let mut notes = Vec::new();
-        detect(text, &Rules::default(), &d, None, &[], &mut notes).into_iter().map(|m| (m.category, text[m.bstart..m.bend].to_string())).collect()
+        detect(text, &Rules::default(), &d, None, &[], &[], &mut notes).into_iter().map(|m| (m.category, text[m.bstart..m.bend].to_string())).collect()
     }
 
     #[test]
@@ -635,8 +718,21 @@ mod tests {
         rules.categories.get_mut(&Category::Email).unwrap().enabled = false;
         let text = "Die Anna Berger GmbH schreibt an info@example.org. Anna Berger selbst auch.";
         let mut notes = Vec::new();
-        let found: Vec<String> = detect(text, &rules, &d, None, &[], &mut notes).into_iter().map(|m| text[m.bstart..m.bend].to_string()).collect();
+        let found: Vec<String> = detect(text, &rules, &d, None, &[], &[], &mut notes).into_iter().map(|m| text[m.bstart..m.bend].to_string()).collect();
         assert_eq!(found, vec!["Anna Berger".to_string()], "{found:?}");
+    }
+
+    #[test]
+    fn majority_person_column_and_particle_surname() {
+        let d = Dictionaries::builtin();
+        let text = "Abteilung,Gerät,Kürzel\nIT,Anna Berger,PC\nIT,Jonas Vogt,PC\nHR,Lena Koch,MAC\nHR,Joey Rösner,PC\nHR,Paschalis Koprinas,TC\nHR,Lisa Denise Zur,PC\nHR,x,PC\n";
+        let mut notes = Vec::new();
+        let found: Vec<(Category, String)> = detect(text, &Rules::default(), &d, Some(','), &[], &[], &mut notes).into_iter().map(|m| (m.category, text[m.bstart..m.bend].to_string())).collect();
+        assert!(found.contains(&(Category::Person, "Joey Rösner".into())), "{found:?}");
+        assert!(found.contains(&(Category::Person, "Paschalis Koprinas".into())), "{found:?}");
+        assert!(!found.iter().any(|f| f.1 == "x" || f.1 == "IT" || f.1 == "PC"), "{found:?}");
+        let zur = detect(text, &Rules::default(), &d, Some(','), &[], &[], &mut notes).into_iter().find(|m| text[m.bstart..m.bend].starts_with("Lisa")).unwrap();
+        assert!(matches!(zur.parts.last(), Some(NamePart::Last { text }) if text == "Zur"), "{:?}", zur.parts);
     }
 
     #[test]
@@ -644,7 +740,7 @@ mod tests {
         let d = Dictionaries::builtin();
         let text = "Kd-Nr;Nachname;Vorname;Geb.;Ort\n10482;Zyxwacz;Anna;02.07.1981;Köln\n";
         let mut notes = Vec::new();
-        let found: Vec<(Category, String)> = detect(text, &Rules::default(), &d, Some(';'), &[], &mut notes).into_iter().map(|m| (m.category, text[m.bstart..m.bend].to_string())).collect();
+        let found: Vec<(Category, String)> = detect(text, &Rules::default(), &d, Some(';'), &[], &[], &mut notes).into_iter().map(|m| (m.category, text[m.bstart..m.bend].to_string())).collect();
         assert!(found.contains(&(Category::CustomerId, "10482".into())), "{found:?}");
         assert!(found.contains(&(Category::Person, "Zyxwacz".into())), "{found:?}");
         assert!(found.contains(&(Category::Person, "Anna".into())));

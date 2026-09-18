@@ -211,7 +211,7 @@ fn header_patterns() -> &'static HeaderPatterns {
             list: vec![
                 mk(r"vorname|vornamen|first ?name|given ?name|firstname", Category::Person, PersonHint::First),
                 mk(r"nachname|familienname|zuname|last ?name|surname|family ?name|lastname", Category::Person, PersonHint::Last),
-                mk(r"name|vor- und nachname|kunde|kundin|kundenname|ansprechpartner(?:in)?|mitarbeiter(?:in)?|patient(?:in)?|person|full ?name|customer ?name|contact|employee|mieter|halter|inhaber|versicherte[rn]?|schüler(?:in)?|student(?:in)?", Category::Person, PersonHint::Full),
+                mk(r"name|vor- und nachname|vor-/nachname|kunde|kundin|kundenname|ansprechpartner(?:in)?|mitarbeiter(?:in)?|mitarbeitende[r]?|patient(?:in)?|person|personen|full ?name|customer ?name|contact|kontakt|employee|mieter(?:in)?|halter(?:in)?|inhaber(?:in)?|versicherte[rn]?|schüler(?:in)?|student(?:in)?|user|users|benutzer(?:in)?|username|user ?name|nutzer(?:in)?|anwender(?:in)?|login|account ?owner|owner|besitzer(?:in)?|bearbeiter(?:in)?|verantwortliche[r]?|leiter(?:in)?|teilnehmer(?:in)?|autor(?:in)?|author|assignee|reporter|kunde/kundin|teammitglied|member|mitglied", Category::Person, PersonHint::Full),
                 mk(r"e-?mail|email-?adresse|e-?mail-?adresse|mail|e-?mail ?address", Category::Email, PersonHint::Full),
                 mk(r"telefon|tel\.?|telefonnummer|phone|phone ?number|mobil|mobile|handy|fax|festnetz|rufnummer", Category::Phone, PersonHint::Full),
                 mk(r"iban|konto|kontonummer|konto-?nr\.?|bankkonto|account ?(?:no|number)?", Category::Iban, PersonHint::Full),
@@ -227,6 +227,19 @@ fn header_patterns() -> &'static HeaderPatterns {
             ],
         }
     })
+}
+
+/// Kopfzeile finden: unter den ersten zehn Zeilen die mit den meisten typisierbaren
+/// Überschriften (mindestens eine). Gruppentitel über der eigentlichen Kopfzeile stören so nicht.
+pub fn header_row_index(text: &str, rows: &[Vec<Cell>]) -> Option<usize> {
+    let mut best: Option<(usize, usize)> = None;
+    for (i, row) in rows.iter().take(10).enumerate() {
+        let typed = row.iter().filter(|c| column_category(text[c.start..c.end].trim()).is_some()).count();
+        if typed > 0 && best.map(|(_, n)| typed > n).unwrap_or(true) {
+            best = Some((i, typed));
+        }
+    }
+    best.map(|(i, _)| i)
 }
 
 /// Kategorie für eine Spaltenüberschrift (leer = keine Typisierung).
@@ -281,6 +294,10 @@ mod tests {
     #[test]
     fn headers() {
         assert_eq!(column_category("Vorname").unwrap(), (Category::Person, PersonHint::First));
+        assert_eq!(column_category("User").unwrap(), (Category::Person, PersonHint::Full));
+        let text = "Liste;;\nAbteilung;User;Gerät\nIT;Anna Berger;PC\n";
+        let rows = cells(text, ';');
+        assert_eq!(header_row_index(text, &rows), Some(1));
         assert_eq!(column_category("E-Mail").unwrap().0, Category::Email);
         assert_eq!(column_category("Kd-Nr.").unwrap().0, Category::CustomerId);
         assert_eq!(column_category("Geb.").unwrap().0, Category::Date);

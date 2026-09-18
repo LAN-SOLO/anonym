@@ -2,7 +2,7 @@
 //! einsammeln, als virtuellen Text (ein Knoten je Zeile) anbieten und beim
 //! Schreiben die Knoten austauschen. Alles andere im Archiv bleibt Byte für Byte.
 
-use super::{Document, ForcedLine, Kind};
+use super::{CellRef, Document, ForcedLine, Kind};
 use crate::csv::{column_category, PersonHint};
 use crate::formats::text::Encoding;
 use crate::model::Category;
@@ -128,8 +128,9 @@ pub fn open(bytes: Vec<u8>, kind: Kind) -> Result<Document, String> {
     let mut nodes = Vec::new();
     let mut text = String::new();
     let mut forced = Vec::new();
+    let mut cells = Vec::new();
     if kind == Kind::Xlsx {
-        xlsx_nodes(&parts, &mut nodes, &mut text, &mut forced);
+        xlsx_nodes(&parts, &mut nodes, &mut text, &mut forced, &mut cells);
     } else {
         for (pi, (_, content)) in parts.iter().enumerate() {
             for c in re.captures_iter(content) {
@@ -157,6 +158,7 @@ pub fn open(bytes: Vec<u8>, kind: Kind) -> Result<Document, String> {
         xml: Some(Container { kind, bytes, parts, nodes }),
         notes,
         forced,
+        cells,
     })
 }
 
@@ -176,7 +178,7 @@ fn col_index(cell_ref: &str) -> usize {
 /// XLSX: sharedStrings als Knoten je `<t>` (gruppiert nach `<si>`), Blätter zellenweise —
 /// Inline-Strings als Knoten, Zahlenzellen in typisierten Spalten ebenfalls. Spalten werden
 /// über die Kopfzeile (erste Zeile) typisiert wie bei CSV.
-fn xlsx_nodes(parts: &[(String, String)], nodes: &mut Vec<Node>, text: &mut String, forced: &mut Vec<ForcedLine>) {
+fn xlsx_nodes(parts: &[(String, String)], nodes: &mut Vec<Node>, text: &mut String, forced: &mut Vec<ForcedLine>, cells: &mut Vec<CellRef>) {
     static SI: OnceLock<Regex> = OnceLock::new();
     static ROW: OnceLock<Regex> = OnceLock::new();
     static CELL: OnceLock<Regex> = OnceLock::new();
@@ -223,6 +225,29 @@ fn xlsx_nodes(parts: &[(String, String)], nodes: &mut Vec<Node>, text: &mut Stri
         if !name.starts_with("xl/worksheets/") {
             continue;
         }
+        let sheet_id = name.trim_start_matches("xl/worksheets/").trim_end_matches(".xml").to_string();
+        // Kopfzeile: unter den ersten zehn Zeilen die mit den meisten typisierbaren Überschriften
+        let mut header_row = 0usize;
+        let mut best = 0usize;
+        for (ri, r) in row_re.captures_iter(content).take(10).enumerate() {
+            let mut typed_n = 0;
+            for c in cell_re.captures_iter(&r[1]) {
+                let typ = attr_t.captures(&c[1]).map(|a| a[1].to_string()).unwrap_or_default();
+                let body = c.get(2).map(|b| b.as_str()).unwrap_or("");
+                let cell_text = match typ.as_str() {
+                    "s" => v_re.captures(body).and_then(|v| v[1].trim().parse::<usize>().ok()).and_then(|i| shared_text.get(i).cloned()).unwrap_or_default(),
+                    "inlineStr" => t_re.captures_iter(body).map(|x| unescape(&x[1])).collect(),
+                    _ => String::new(),
+                };
+                if column_category(&cell_text).is_some() {
+                    typed_n += 1;
+                }
+            }
+            if typed_n > best {
+                best = typed_n;
+                header_row = ri;
+            }
+        }
         let mut typed: Vec<Option<(Category, PersonHint)>> = Vec::new();
         for (ri, r) in row_re.captures_iter(content).enumerate() {
             let inner = r.get(1).unwrap();
@@ -266,7 +291,7 @@ fn xlsx_nodes(parts: &[(String, String)], nodes: &mut Vec<Node>, text: &mut Stri
                     "b" | "e" | "str" => (String::new(), vec![]),
                     _ => {
                         // Zahl: nur in typisierten Spalten als Knoten aufnehmen
-                        match (ri > 0, typed.get(col).copied().flatten(), v_re.captures(body.as_str())) {
+                        match (ri > header_row, typed.get(col).copied().flatten(), v_re.captures(body.as_str())) {
                             (true, Some((cat, _)), Some(v)) if numeric_ok(cat) => {
                                 let g = v.get(1).unwrap();
                                 let idx = nodes.len();
@@ -279,12 +304,18 @@ fn xlsx_nodes(parts: &[(String, String)], nodes: &mut Vec<Node>, text: &mut Stri
                         }
                     }
                 };
-                if ri == 0 {
+                if ri == header_row {
                     while typed.len() <= col {
                         typed.push(None);
                     }
                     typed[col] = column_category(&cell_text);
                     continue;
+                }
+                if ri < header_row {
+                    continue;
+                }
+                for n in &own_nodes {
+                    cells.push(CellRef { line: *n, column: format!("{sheet_id}:{col}") });
                 }
                 if let Some(Some((cat, hint))) = typed.get(col) {
                     for n in own_nodes {
@@ -384,6 +415,28 @@ mod tests {
             w.finish().unwrap();
         }
         out.into_inner()
+    }
+
+    #[test]
+    fn xlsx_header_in_second_row() {
+        let ss = ["Hardware-Liste", "Abteilung", "User", "IT", "Joey Rösner"];
+        let sst = format!("<sst xmlns=\"x\">{}</sst>", ss.iter().map(|s| format!("<si><t>{}</t></si>", escape(s))).collect::<String>());
+        let sheet = "<worksheet xmlns=\"x\"><sheetData><row r=\"1\"><c r=\"A1\" t=\"s\"><v>0</v></c></row><row r=\"2\"><c r=\"A2\" t=\"s\"><v>1</v></c><c r=\"B2\" t=\"s\"><v>2</v></c></row><row r=\"3\"><c r=\"A3\" t=\"s\"><v>3</v></c><c r=\"B3\" t=\"s\"><v>4</v></c></row></sheetData></worksheet>";
+        let mut out = Cursor::new(Vec::new());
+        {
+            let mut w = ZipWriter::new(&mut out);
+            let o = SimpleFileOptions::default();
+            w.start_file("xl/sharedStrings.xml", o).unwrap();
+            w.write_all(sst.as_bytes()).unwrap();
+            w.start_file("xl/worksheets/sheet1.xml", o).unwrap();
+            w.write_all(sheet.as_bytes()).unwrap();
+            w.finish().unwrap();
+        }
+        let doc = open(out.into_inner(), Kind::Xlsx).unwrap();
+        let lines: Vec<&str> = doc.text.lines().collect();
+        let forced: Vec<(&str, Category)> = doc.forced.iter().map(|f| (lines[f.line], f.category)).collect();
+        assert_eq!(forced, vec![("Joey Rösner", Category::Person)], "{forced:?}");
+        assert!(doc.cells.iter().any(|c| lines[c.line] == "IT" && c.column == "sheet1:0"));
     }
 
     #[test]

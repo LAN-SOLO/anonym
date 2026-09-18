@@ -46,6 +46,16 @@ pub struct Document {
     /// Zeilen des virtuellen Texts, die durch eine typisierte Tabellenspalte
     /// bereits einer Kategorie zugeordnet sind (XLSX: Kopfzeile → Spalte).
     pub forced: Vec<ForcedLine>,
+    /// Zeile des virtuellen Texts → Tabellenspalte (XLSX), für die Mehrheits-Typisierung.
+    pub cells: Vec<CellRef>,
+}
+
+/// Zuordnung einer Zeile des virtuellen Texts zu einer Tabellenspalte.
+#[derive(Debug, Clone)]
+pub struct CellRef {
+    pub line: usize,
+    /// Spaltenkennung, z. B. `sheet1:B`
+    pub column: String,
 }
 
 /// Eine per Spaltenkopf typisierte Zeile des virtuellen Texts.
@@ -78,7 +88,7 @@ pub fn open(path: &Path, fallback_encoding: &str) -> Result<Document, String> {
             if encoding.legacy {
                 notes.push(format!("Kodierung {} erkannt — Ausgabe in derselben Kodierung.", encoding.name));
             }
-            Ok(Document { kind, text, encoding, xml: None, notes, forced: Vec::new() })
+            Ok(Document { kind, text, encoding, xml: None, notes, forced: Vec::new(), cells: Vec::new() })
         }
     }
 }
