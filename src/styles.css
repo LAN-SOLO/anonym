@@ -485,7 +485,7 @@ html[data-theme='light'] {
 .badge.dimmed { border-color: var(--border); color: var(--text-faint); }
 .masked-toggle { padding: 3px 4px; }
 .hdr-help { font-weight: 600; }
-.dot { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
 
 .main { flex: 1; display: flex; min-height: 0; }
 .sidebar {
@@ -682,3 +682,26 @@ textarea.mono { font-family: var(--mono); }
 .pickrow input[type='text'] { flex: 1; min-width: 0; }
 .pickrow button { white-space: nowrap; }
 input:disabled, select:disabled, textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* help language toggle (DE/EN) in the modal header — independent of the app language */
+.hlp-lang {
+  display: inline-flex;
+  border: 1px solid var(--border, #223252);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-right: 6px;
+}
+.hlp-lang-btn {
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-faint, #5c6f8c);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.hlp-lang-btn + .hlp-lang-btn { border-left: 1px solid var(--border, #223252); }
+.hlp-lang-btn:hover { color: var(--text, #e2e8f0); }
+.hlp-lang-btn.active { color: var(--blue, #38bdf8); background: var(--bg-raised, rgba(56, 189, 248, 0.08)); }
