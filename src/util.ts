@@ -22,7 +22,11 @@ export function baseName(path: string): string {
 
 export function dirName(path: string): string {
   const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-  return i >= 0 ? path.slice(0, i) : '';
+  if (i < 0) return '';
+  // Wurzel behalten: „/brief.txt“ → „/“, „C:\brief.txt“ → „C:\“ (nicht „C:“ = aktueller Ordner auf C:)
+  if (i === 0) return path.slice(0, 1);
+  const dir = path.slice(0, i);
+  return /^[A-Za-z]:$/.test(dir) ? dir + path[i] : dir;
 }
 
 export function fmtDateTime(iso: string, lang: Lang): string {
