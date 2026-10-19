@@ -74,7 +74,12 @@ export function RulesView({
         </label>
         <label className="field grow1">
           <span>{t.rulesSeed}</span>
-          <input type="text" value={rules.seed} onChange={(e) => patch({ seed: e.target.value })} />
+          <div className="pickrow" style={{ margin: 0 }}>
+            <input type="text" value={rules.seed} spellCheck={false} onChange={(e) => patch({ seed: e.target.value })} />
+            <button title={t.rulesNewSeedHint} onClick={() => api.newSeed().then((seed) => patch({ seed })).catch(onFail)}>
+              {t.rulesNewSeed}
+            </button>
+          </div>
         </label>
         <label className="field grow1">
           <span>{t.rulesWorld}</span>
@@ -88,6 +93,7 @@ export function RulesView({
         </label>
       </div>
       <div className="note">{t.rulesSeedHint}</div>
+      {rules.seed === 'anonym' && <div className="note">{t.rulesSeedWeak}</div>}
       <div className="row3">
         <label className="field grow1">
           <span>{t.rulesDateShift}</span>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { Decision, ExportTarget, FILE_EXTENSIONS, Rules, Settings, UpdateInfo, api, defaultSettings } from './api';
-import { dicts, Lang } from './i18n';
+import { dicts, Lang, noteText } from './i18n';
 import { Findings } from './components/Findings';
 import { Help } from './components/Help';
 import { Preview } from './components/Preview';
@@ -38,28 +38,44 @@ function ConfirmModal({ text, okLabel, cancelLabel, altLabel, onOk, onAlt, onClo
   );
 }
 
-/** Texteingabe (Passwort) als Modal. */
-function PromptModal({ title, label, okLabel, cancelLabel, password, onOk, onClose }: { title: string; label: string; okLabel: string; cancelLabel: string; password?: boolean; onOk: (v: string) => void; onClose: () => void }) {
+/** Texteingabe (Passwort) als Modal — mit `repeatLabel` zweimal einzugeben (Tippfehler-Schutz). */
+function PromptModal({ title, label, repeatLabel, mismatch, okLabel, cancelLabel, password, onOk, onClose }: { title: string; label: string; repeatLabel?: string; mismatch?: string; okLabel: string; cancelLabel: string; password?: boolean; onOk: (v: string) => void; onClose: () => void }) {
   const [v, setV] = useState('');
+  const [v2, setV2] = useState('');
+  const differs = !!repeatLabel && v2 !== '' && v !== v2;
+  const ok = !!v && (!repeatLabel || v === v2);
+  const submit = () => ok && onOk(v);
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
         <label className="field">
           <span>{label}</span>
-          <input type={password ? 'password' : 'text'} autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && v && onOk(v)} />
+          <input type={password ? 'password' : 'text'} autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
         </label>
+        {repeatLabel && (
+          <label className="field">
+            <span>{repeatLabel}</span>
+            <input type={password ? 'password' : 'text'} value={v2} onChange={(e) => setV2(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
+          </label>
+        )}
+        {differs && <div className="note">{mismatch}</div>}
         <div className="btnrow">
           <button className="ghost" onClick={onClose}>
             {cancelLabel}
           </button>
-          <button className="primary" disabled={!v} onClick={() => onOk(v)}>
+          <button className="primary" disabled={!ok} onClick={submit}>
             {okLabel}
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+/** Stabile Kennung einer Fundstelle über Analysen hinweg: Byte-Position + Text. */
+function keyOf(f: { bstart: number; text: string }): string {
+  return `${f.bstart}\u0000${f.text}`;
 }
 
 function supported(path: string): boolean {
@@ -85,7 +101,7 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [targets, setTargets] = useState<ExportTarget[]>([]);
   const [exportExt, setExportExt] = useState('xlsx');
-  const [prompt, setPrompt] = useState<{ title: string; label: string } | null>(null);
+  const [prompt, setPrompt] = useState<{ title: string; label: string; repeat?: boolean } | null>(null);
   const [showRecover, setShowRecover] = useState(false);
   /** Sitzungs-Passwort für Recover-Dateien (nie gespeichert). */
   const sessionPw = useRef<string | null>(null);
@@ -93,6 +109,8 @@ export default function App() {
   const rulesTimer = useRef<number | undefined>(undefined);
   const rulesRef = useRef<Rules | null>(null);
   rulesRef.current = rules;
+  const filesRef = useRef<FileEntry[]>([]);
+  filesRef.current = files;
 
   const lang: Lang = settings?.language ?? 'de';
   const t = dicts[lang];
@@ -121,10 +139,10 @@ export default function App() {
   // Texteingabe als Promise (null = abgebrochen)
   const promptResolve = useRef<((v: string | null) => void) | null>(null);
   const askText = useCallback(
-    (title: string, label: string) =>
+    (title: string, label: string, repeat = false) =>
       new Promise<string | null>((resolve) => {
         promptResolve.current = resolve;
-        setPrompt({ title, label });
+        setPrompt({ title, label, repeat });
       }),
     []
   );
@@ -146,14 +164,18 @@ export default function App() {
       api
         .analyzeFile(path, r)
         .then((a) => {
+          // Fundstellen werden nach jeder Analyse neu durchnummeriert (neue Ausnahme, neues
+          // Muster …): Entscheidungen über Position + Text der Fundstelle auf die neuen ids
+          // übertragen, nicht über die id — sonst träfe ein „Ablehnen“ plötzlich eine andere Stelle.
           setFiles((fs) => fs.map((f) => (f.path === path ? { ...f, status: 'ready', analysis: a } : f)));
-          // Entscheidungen behalten, deren Fundstelle (id + Text) noch existiert
           setDecisions((d) => {
             const old = d[path] ?? {};
+            const byKey = new Map<string, Decision>();
+            for (const dec of Object.values(old)) if (dec.key) byKey.set(dec.key, dec);
             const next: Record<number, Decision> = {};
             for (const f of a.findings) {
-              const prev = old[f.id];
-              if (prev) next[f.id] = prev;
+              const prev = byKey.get(keyOf(f));
+              if (prev) next[f.id] = { ...prev, id: f.id };
             }
             return { ...d, [path]: next };
           });
@@ -255,10 +277,8 @@ export default function App() {
   // --- Regelwerk ---------------------------------------------------------------
   const reanalyzeAll = useCallback(
     (r: Rules) => {
-      setFiles((fs) => {
-        for (const f of fs) if (f.status !== 'idle') analyze(f.path, r);
-        return fs;
-      });
+      // Seiteneffekte nicht im State-Updater (StrictMode ruft Updater doppelt auf)
+      for (const f of filesRef.current) if (f.status !== 'idle') analyze(f.path, r);
     },
     [analyze]
   );
@@ -291,6 +311,7 @@ export default function App() {
 
   // --- Entscheidungen ---------------------------------------------------------
   const decide = (path: string, ids: number[], patch: Partial<Decision> | null) => {
+    const findings = filesRef.current.find((f) => f.path === path)?.analysis?.findings ?? [];
     setDecisions((d) => {
       const cur = { ...(d[path] ?? {}) };
       for (const id of ids) {
@@ -298,8 +319,9 @@ export default function App() {
           delete cur[id];
           continue;
         }
+        const f = findings.find((x) => x.id === id);
         const prev = cur[id] ?? { id, accept: true, category: null, replacement: null };
-        cur[id] = { ...prev, ...patch, id };
+        cur[id] = { ...prev, ...patch, id, key: f ? keyOf(f) : prev.key };
       }
       return { ...d, [path]: cur };
     });
@@ -314,8 +336,8 @@ export default function App() {
   // --- Speichern ---------------------------------------------------------------
   /** Speichern: im Ursprungsformat (ext = undefined), als Export (ext) oder per Dialog (chooseTarget). */
   const applyOne = useCallback(
-    async (entry: FileEntry, chooseTarget: boolean, ext?: string): Promise<boolean> => {
-      if (!rules || !settings || !entry.analysis) return false;
+    async (entry: FileEntry, chooseTarget: boolean, ext?: string): Promise<string | null> => {
+      if (!rules || !settings || !entry.analysis) return null;
       let output = await api.suggestOutput(entry.path, ext);
       const srcExt = entry.path.split('.').pop()?.toLowerCase() ?? '';
       // Dateidialog: gewünschtes Format zuerst, dann Ursprungsformat, dann alle Exporte
@@ -330,22 +352,23 @@ export default function App() {
       };
       if (chooseTarget || ext) {
         const sel = await pickPath();
-        if (!sel) return false;
+        if (!sel) return null;
         output = sel;
       } else if (settings.confirmOverwrite && (await api.pathExists(output))) {
         const a = await ask(t.confirmOverwriteText(baseName(output)), t.overwrite, t.otherName);
-        if (a === 'cancel') return false;
+        if (a === 'cancel') return null;
         if (a === 'alt') {
           const sel = await pickPath();
-          if (!sel) return false;
+          if (!sel) return null;
           output = sel;
         }
       }
-      const list = Object.values(decisions[entry.path] ?? {});
+      // `key` ist nur für die Oberfläche (Zuordnung nach neuer Analyse)
+      const list = Object.values(decisions[entry.path] ?? {}).map(({ key: _key, ...d }) => d);
       // Verschlüsselte Recover-Datei: Passwort einmal je Sitzung erfragen
       if (settings.writeRecover && settings.encryptRecover && !sessionPw.current) {
-        const pw = await askText(t.setPassword, t.passwordPrompt);
-        if (!pw) return false;
+        const pw = await askText(t.setPassword, t.passwordPrompt, true);
+        if (!pw) return null;
         sessionPw.current = pw;
       }
       try {
@@ -353,10 +376,10 @@ export default function App() {
         setFiles((fs) =>
           fs.map((f) => (f.path === entry.path ? { ...f, status: 'done', result: res, outputs: [...(f.outputs ?? []).filter((o) => o.output !== res.output), res] } : f))
         );
-        return true;
+        return res.output;
       } catch (e) {
         fail(e);
-        return false;
+        return null;
       }
     },
     [rules, settings, decisions, fail, ask, askText, t, targets]
@@ -367,10 +390,10 @@ export default function App() {
       const entry = files.find((f) => f.path === selected);
       if (!entry || !entry.analysis || busy) return;
       setBusy(true);
-      const ok = await applyOne(entry, chooseTarget, ext);
+      const written = await applyOne(entry, chooseTarget, ext);
       setBusy(false);
-      if (ok) {
-        showToast(ext ? t.exportedTo(`${baseName(entry.path)} → ${ext.toUpperCase()}`) : t.savedTo(baseName(entry.path)));
+      if (written) {
+        showToast(ext ? t.exportedTo(`${baseName(entry.path)} → ${ext.toUpperCase()}`) : t.savedTo(baseName(written)));
         setTab('report');
       }
     },
@@ -384,6 +407,8 @@ export default function App() {
     for (const f of files) {
       if (f.status === 'ready' || f.status === 'done') {
         if (await applyOne(f, false)) n++;
+        // Passwortabfrage abgebrochen: nicht für jede weitere Datei erneut fragen
+        else if (settings?.writeRecover && settings.encryptRecover && !sessionPw.current) break;
       }
     }
     setBusy(false);
@@ -565,7 +590,7 @@ export default function App() {
                       <div className="notes">
                         {analysis.notes.map((n, i) => (
                           <div key={i} className="note">
-                            // {n}
+                            // {noteText(t, n)}
                           </div>
                         ))}
                       </div>
@@ -633,12 +658,16 @@ export default function App() {
           onSave={saveSettings}
           onLive={(s) => setSettings(s)}
           onConfirm={onConfirm}
+          onRulesReload={() => api.getRules().then((r) => {
+            setRules(r);
+            reanalyzeAll(r);
+          }).catch(fail)}
           onToast={showToast}
           onFail={fail}
         />
       )}
 
-      {prompt && <PromptModal title={prompt.title} label={prompt.label} okLabel={t.ok2} cancelLabel={t.cancel} password onOk={(v) => settlePrompt(v)} onClose={() => settlePrompt(null)} />}
+      {prompt && <PromptModal title={prompt.title} label={prompt.label} repeatLabel={prompt.repeat ? t.passwordRepeat : undefined} mismatch={t.passwordMismatch} okLabel={t.ok2} cancelLabel={t.cancel} password onOk={(v) => settlePrompt(v)} onClose={() => settlePrompt(null)} />}
 
       {showRecover && (
         <RecoverModal

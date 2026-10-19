@@ -560,7 +560,8 @@ i.dot { display: inline-block; width: 7px; height: 7px; border-radius: 2px; marg
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px;
+  /* rechts Platz für den schwebenden ?-Knopf (.hlp-fab), sonst verdeckt er „Speichern“ */
+  padding: 8px 54px 8px 14px;
   border-top: 1px solid var(--border);
   background: var(--bg-panel);
 }

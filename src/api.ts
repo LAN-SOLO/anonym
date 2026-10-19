@@ -98,6 +98,8 @@ export interface Decision {
   accept: boolean;
   category?: Category | null;
   replacement?: string | null;
+  /** Nur UI: stabile Kennung der Fundstelle (Position + Text), um Entscheidungen nach einer neuen Analyse zuzuordnen. */
+  key?: string;
 }
 
 export interface Analysis {
@@ -229,6 +231,7 @@ export const api = {
   getRules: () => call<Rules>('get_rules'),
   setRules: (rules: Rules) => call<void>('set_rules', { rules }),
   defaultRules: () => call<Rules>('default_rules'),
+  newSeed: () => call<string>('new_seed'),
   importRules: (path: string) => call<Rules>('import_rules', { path }),
   exportRules: (rules: Rules, path: string) => call<void>('export_rules', { rules, path }),
   listWorlds: () => call<string[]>('list_worlds'),

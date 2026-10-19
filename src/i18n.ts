@@ -138,7 +138,10 @@ const de = {
   // Regelwerk
   rulesName: 'Name des Regelwerks',
   rulesSeed: 'Saat',
-  rulesSeedHint: 'Gleiche Saat + gleiche Datei = gleiche Ausgabe. Ändern Sie die Saat, bekommen alle Personen neue Pseudonyme.',
+  rulesSeedHint: 'Gleiche Saat + gleiche Datei = gleiche Ausgabe. Die Saat wirkt wie ein Schlüssel: Wer sie kennt, kann Pseudonyme und Datumsverschiebung nachrechnen — anonym erzeugt sie deshalb zufällig. Geben Sie sie nicht weiter (exportierte Regelwerke enthalten sie). Neue Saat = neue Pseudonyme für alle.',
+  rulesNewSeed: 'Neu',
+  rulesNewSeedHint: 'Neue zufällige Saat erzeugen',
+  rulesSeedWeak: '// Diese Saat ist öffentlich bekannt (alte Voreinstellung) — Pseudonyme lassen sich nachrechnen. Sie bleibt nur, weil Ihr Pseudonym-Speicher daran hängt; für neue Empfänger: „Neu“.',
   rulesWorld: 'Namenswelt',
   world: {
     de: 'deutsch',
@@ -290,6 +293,8 @@ const de = {
   setPassword: 'Passwort für Recover-Dateien',
   passwordPrompt: 'Passwort',
   ok2: 'Weiter',
+  passwordRepeat: 'Passwort wiederholen',
+  passwordMismatch: 'Die Passwörter stimmen nicht überein.',
 
   // Dialoge & Meldungen
   confirmOverwriteText: (name: string) => `„${name}“ existiert bereits. Überschreiben?`,
@@ -300,6 +305,14 @@ const de = {
   addedToAllowlist: (w: string) => `„${w}“ steht jetzt auf der Ausnahmeliste.`,
   unsupported: (name: string) => `„${name}“: Format nicht unterstützt.`,
   allFiles: 'Alle unterstützten Dateien',
+  storeImported: 'Schlüsseldatei geladen — Saat und Namenswelt ins Regelwerk übernommen.',
+  note: {
+    docx: 'Word: Jeder Formatierungslauf ist eine Zeile — ein Name, den Word über zwei Läufe verteilt hat, erscheint geteilt. Gelöschter Text aus „Änderungen verfolgen“ und Link-Ziele (mailto:) werden mitgeprüft.',
+    xlsx: 'Excel: Textzellen und Kommentare aller Blätter; Zahlenzellen nur in Spalten, deren Kopfzeile eine Kategorie nennt (Kd-Nr., Telefon, PLZ, Geb. …).',
+    metadata: 'Beim Speichern entfernt anonym die Metadaten: Autor, zuletzt geändert von, Titel, Thema, Stichwörter, Firma, Manager sowie die Namen von Kommentar- und Überarbeitungs-Autoren.',
+    encoding: (name: string) => `Kodierung ${name} erkannt — Ausgabe in derselben Kodierung.`,
+    pattern: (name: string, err: string) => `Eigenes Muster „${name}“ ungültig: ${err}`,
+  },
 };
 
 export type Dict = typeof de;
@@ -435,7 +448,10 @@ const en: Dict = {
 
   rulesName: 'Rule set name',
   rulesSeed: 'Seed',
-  rulesSeedHint: 'Same seed + same file = same output. Change the seed and every person gets new pseudonyms.',
+  rulesSeedHint: 'Same seed + same file = same output. The seed works like a key: whoever knows it can recompute pseudonyms and the date shift — so anonym generates it at random. Do not share it (exported rule sets contain it). New seed = new pseudonyms for everyone.',
+  rulesNewSeed: 'New',
+  rulesNewSeedHint: 'Generate a new random seed',
+  rulesSeedWeak: '// This seed is publicly known (old default) — pseudonyms can be recomputed. It is only kept because your pseudonym store depends on it; for new recipients: “New”.',
   rulesWorld: 'Name world',
   world: {
     de: 'German',
@@ -585,6 +601,8 @@ const en: Dict = {
   setPassword: 'Password for recover files',
   passwordPrompt: 'Password',
   ok2: 'Continue',
+  passwordRepeat: 'Repeat password',
+  passwordMismatch: 'The passwords do not match.',
 
   confirmOverwriteText: (name: string) => `“${name}” already exists. Overwrite?`,
   overwrite: 'Overwrite',
@@ -594,6 +612,33 @@ const en: Dict = {
   addedToAllowlist: (w: string) => `“${w}” is now on the allowlist.`,
   unsupported: (name: string) => `“${name}”: format not supported.`,
   allFiles: 'All supported files',
+  storeImported: 'Key file loaded — seed and name world copied into the rule set.',
+  note: {
+    docx: 'Word: each formatting run is one line — a name Word split across two runs appears split. Deleted text from “Track changes” and link targets (mailto:) are checked too.',
+    xlsx: 'Excel: text cells and comments of all sheets; numeric cells only in columns whose header names a category (customer no., phone, postcode, DOB …).',
+    metadata: 'When saving, anonym removes the metadata: author, last modified by, title, subject, keywords, company, manager and the names of comment and revision authors.',
+    encoding: (name: string) => `Encoding ${name} detected — output in the same encoding.`,
+    pattern: (name: string, err: string) => `Custom pattern “${name}” invalid: ${err}`,
+  },
 };
 
 export const dicts: Record<Lang, Dict> = { de, en };
+
+/** Hinweis-Code aus dem Kern (`docx-runs`, `encoding\u001f<name>`, …) in die UI-Sprache übersetzen. */
+export function noteText(t: Dict, code: string): string {
+  const [key, ...args] = code.split('\u001f');
+  switch (key) {
+    case 'docx-runs':
+      return t.note.docx;
+    case 'xlsx-cells':
+      return t.note.xlsx;
+    case 'metadata':
+      return t.note.metadata;
+    case 'encoding':
+      return t.note.encoding(args[0] ?? '');
+    case 'pattern':
+      return t.note.pattern(args[0] ?? '', args[1] ?? '');
+    default:
+      return code;
+  }
+}

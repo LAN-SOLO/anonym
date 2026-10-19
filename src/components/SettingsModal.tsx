@@ -4,7 +4,7 @@ import { FALLBACK_ENCODINGS, Settings, StoreInfo, UpdateInfo, api } from '../api
 import { Dict } from '../i18n';
 import { IconExternalLink } from '../icons';
 
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '1.0.0';
 
 type SetTab = 'general' | 'files' | 'store' | 'app';
 
@@ -18,6 +18,7 @@ export function SettingsModal({
   onSave,
   onLive,
   onConfirm,
+  onRulesReload,
   onToast,
   onFail,
 }: {
@@ -27,6 +28,7 @@ export function SettingsModal({
   onSave: (s: Settings) => void;
   onLive: (s: Settings) => void;
   onConfirm: (text: string) => Promise<boolean>;
+  onRulesReload: () => void;
   onToast: (msg: string) => void;
   onFail: (e: unknown) => void;
 }) {
@@ -87,7 +89,14 @@ export function SettingsModal({
   const importStore = async () => {
     const sel = await open({ multiple: false, filters: [{ name: 'JSON', extensions: ['json'] }] });
     if (typeof sel !== 'string') return;
-    api.storeImport(sel).then(setStore).catch(onFail);
+    api
+      .storeImport(sel)
+      .then((info) => {
+        setStore(info);
+        onRulesReload();
+        onToast(t.storeImported);
+      })
+      .catch(onFail);
   };
 
   const tabs: [SetTab, string][] = [
