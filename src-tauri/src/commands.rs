@@ -73,6 +73,7 @@ pub fn get_settings(st: State<'_, Shared>) -> Settings {
 
 #[tauri::command]
 pub fn set_settings(st: State<'_, Shared>, settings: Settings) {
+    let settings = settings.sanitized();
     settings::store(&st.config_dir, &settings);
     *st.settings.lock().unwrap() = settings;
 }
@@ -98,11 +99,18 @@ pub fn set_rules(st: State<'_, Shared>, rules: Rules) -> Result<(), String> {
 
 #[tauri::command]
 pub fn default_rules() -> Rules {
-    Rules::default()
+    store::fresh_rules()
+}
+
+/// Neue zufällige Saat für das Regelwerk.
+#[tauri::command]
+pub fn new_seed() -> String {
+    anonym_core::pseudo::random_seed()
 }
 
 #[tauri::command]
 pub fn import_rules(st: State<'_, Shared>, path: String) -> Result<Rules, String> {
+    read_small(Path::new(&path), "Regelwerk")?;
     let rules = store::read_rules(Path::new(&path))?;
     store::save_rules(&st.config_dir, &rules)?;
     *st.rules.lock().unwrap() = rules.clone();
@@ -151,15 +159,23 @@ pub async fn apply_file(st: State<'_, Shared>, path: String, rules: Rules, decis
     tauri::async_runtime::spawn_blocking(move || {
         let src = Path::new(&path);
         let out = Path::new(&output);
-        if src == out {
-            return Err("Ausgabe darf die Quelle nicht überschreiben".to_string());
+        // Weder Ausgabe noch Bericht noch Recover-Datei dürfen die Quelle treffen
+        let report_target = report_path_for(out);
+        let recover_target = anonym_core::recover_path_for(out);
+        for target in [out, report_target.as_path(), recover_target.as_path()] {
+            if same_file(src, target) {
+                return Err("Ausgabe darf die Quelle nicht überschreiben".to_string());
+            }
+        }
+        if s.write_recover && s.encrypt_recover && password.as_deref().map(str::is_empty).unwrap_or(true) {
+            return Err("PASSWORD_REQUIRED".into());
         }
         let applied = anonym_core::apply_file(src, &rules, &st.dicts, &opts, &decisions, out)?;
         if s.masked && s.use_store {
             store::save_store(&st.config_dir, &applied.store)?;
         }
         let report_path = if s.write_report {
-            let rp = report_path_for(out);
+            let rp = report_target;
             let json = serde_json::to_string_pretty(&applied.report).map_err(|e| e.to_string())?;
             store::write_atomic(&rp, json.as_bytes())?;
             Some(rp.to_string_lossy().into_owned())
@@ -167,11 +183,8 @@ pub async fn apply_file(st: State<'_, Shared>, path: String, rules: Rules, decis
             None
         };
         let recover_path = if s.write_recover {
-            let rp = anonym_core::recover_path_for(out);
+            let rp = recover_target;
             let pw = if s.encrypt_recover { password.as_deref().filter(|p| !p.is_empty()) } else { None };
-            if s.encrypt_recover && pw.is_none() {
-                return Err("PASSWORD_REQUIRED".into());
-            }
             let bytes = recover::seal(&applied.recover, pw)?;
             store::write_atomic(&rp, &bytes)?;
             Some(rp.to_string_lossy().into_owned())
@@ -184,16 +197,46 @@ pub async fn apply_file(st: State<'_, Shared>, path: String, rules: Rules, decis
     .map_err(|e| e.to_string())?
 }
 
+/// Zeigen zwei Pfade auf dieselbe Datei? Vorhandene Dateien über den kanonischen Pfad
+/// (Symlinks, `..`, unter Windows Laufwerksbuchstaben und `/` vs. `\\`); sonst über den
+/// kanonischen Ordner + Dateinamen. Windows und macOS vergleichen ohne Groß-/Kleinschreibung,
+/// weil ihre Standard-Dateisysteme das auch tun.
+pub(crate) fn same_file(a: &Path, b: &Path) -> bool {
+    fn norm(p: &Path) -> Option<PathBuf> {
+        if let Ok(c) = std::fs::canonicalize(p) {
+            return Some(c);
+        }
+        let parent = p.parent().filter(|x| !x.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        Some(std::fs::canonicalize(parent).ok()?.join(p.file_name()?))
+    }
+    let (Some(x), Some(y)) = (norm(a), norm(b)) else { return a == b };
+    if cfg!(any(windows, target_os = "macos")) {
+        x.to_string_lossy().to_lowercase() == y.to_string_lossy().to_lowercase()
+    } else {
+        x == y
+    }
+}
+
 fn report_path_for(out: &Path) -> PathBuf {
     let stem = out.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "ausgabe".into());
     out.with_file_name(format!("{stem}.report.json"))
+}
+
+/// JSON-Dateien (Recover-Datei, Schlüsseldatei, Regelwerk) mit Größenbremse lesen.
+pub(crate) fn read_small(path: &Path, what: &str) -> Result<Vec<u8>, String> {
+    const MAX: u64 = 64 * 1024 * 1024;
+    let meta = std::fs::metadata(path).map_err(|e| format!("{what} nicht lesbar: {e}"))?;
+    if !meta.is_file() || meta.len() > MAX {
+        return Err(format!("{what}: keine Datei oder größer als 64 MB"));
+    }
+    std::fs::read(path).map_err(|e| format!("{what} nicht lesbar: {e}"))
 }
 
 // --- Rückübersetzung ---------------------------------------------------------
 
 #[tauri::command]
 pub fn recover_info(path: String) -> Result<RecoverInfo, String> {
-    let bytes = std::fs::read(&path).map_err(|e| format!("Recover-Datei nicht lesbar: {e}"))?;
+    let bytes = read_small(Path::new(&path), "Recover-Datei")?;
     if recover::is_sealed(&bytes) {
         return Ok(RecoverInfo { encrypted: true, source: None, output: None, created: None, entries: 0 });
     }
@@ -219,11 +262,14 @@ pub async fn recover_file(st: State<'_, Shared>, path: String, key_path: String,
     let st = st.inner().clone();
     let opts = options(&st);
     tauri::async_runtime::spawn_blocking(move || {
-        let bytes = std::fs::read(&key_path).map_err(|e| format!("Recover-Datei nicht lesbar: {e}"))?;
-        let key = recover::open(&bytes, password.as_deref())?;
-        if Path::new(&path) == Path::new(&output) {
+        if same_file(Path::new(&path), Path::new(&output)) {
             return Err("Ausgabe darf die Quelle nicht überschreiben".to_string());
         }
+        if same_file(Path::new(&key_path), Path::new(&output)) {
+            return Err("Ausgabe darf die Recover-Datei nicht überschreiben".to_string());
+        }
+        let bytes = read_small(Path::new(&key_path), "Recover-Datei")?;
+        let key = recover::open(&bytes, password.as_deref())?;
         anonym_core::recover_file(Path::new(&path), &key, &opts, Path::new(&output))
     })
     .await
@@ -257,9 +303,22 @@ pub fn store_export(st: State<'_, Shared>, path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn store_import(st: State<'_, Shared>, path: String) -> Result<StoreInfo, String> {
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("Schlüsseldatei nicht lesbar: {e}"))?;
-    let s: anonym_core::Store = serde_json::from_str(&text).map_err(|e| format!("Keine gültige Schlüsseldatei: {e}"))?;
+    let bytes = read_small(Path::new(&path), "Schlüsseldatei")?;
+    let s: anonym_core::Store = serde_json::from_slice(&bytes).map_err(|e| format!("Keine gültige Schlüsseldatei: {e}"))?;
+    if s.seed.trim().is_empty() {
+        return Err("Keine gültige Schlüsseldatei: Saat fehlt".into());
+    }
     store::save_store(&st.config_dir, &s)?;
+    // Der Speicher hängt an seiner Saat und Namenswelt: ins aktive Regelwerk übernehmen,
+    // sonst würde er beim nächsten Lauf als „passt nicht“ geleert.
+    {
+        let mut rules = st.rules.lock().unwrap();
+        rules.seed = s.seed.clone();
+        if WORLD_IDS.contains(&s.world.as_str()) {
+            rules.world = s.world.clone();
+        }
+        store::save_rules(&st.config_dir, &rules)?;
+    }
     Ok(store_info(st))
 }
 
@@ -270,14 +329,25 @@ pub fn path_exists(path: String) -> bool {
     Path::new(&path).exists()
 }
 
+/// Websites, die die App öffnen darf (Einstellungen → App).
+const ALLOWED_URLS: [&str; 2] = ["https://lan-solo.com/", "https://github.com/LAN-SOLO/"];
+
+/// Ordner im Dateimanager oder eine der festen Websites öffnen. Bewusst keine Dateien und
+/// keine beliebigen URLs: Das WebView soll nichts starten können, was ausführbar ist.
 #[tauri::command]
 pub fn open_path(app: AppHandle, path: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     if path.starts_with("http://") || path.starts_with("https://") {
-        app.opener().open_url(path, None::<&str>).map_err(|e| e.to_string())
-    } else {
-        app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
+        if !ALLOWED_URLS.iter().any(|u| path.starts_with(u)) {
+            return Err("Adresse nicht erlaubt".into());
+        }
+        return app.opener().open_url(path, None::<&str>).map_err(|e| e.to_string());
     }
+    let p = Path::new(&path);
+    if !p.is_dir() {
+        return Err("Nur Ordner lassen sich öffnen".into());
+    }
+    app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -309,4 +379,26 @@ pub async fn install_update(app: AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| format!("Update fehlgeschlagen: {e}"))?;
     app.restart();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn same_file_detects_aliases() {
+        let dir = std::env::temp_dir().join(format!("anonym-same-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let f = dir.join("brief.txt");
+        std::fs::write(&f, "x").unwrap();
+        assert!(same_file(&f, &dir.join("sub").join("..").join("brief.txt")));
+        assert!(!same_file(&f, &dir.join("brief.anonym.txt")));
+        // Noch nicht existierende Ausgabe im selben Ordner
+        assert!(same_file(&dir.join("neu.txt"), &dir.join("sub").join("..").join("neu.txt")));
+        if cfg!(any(windows, target_os = "macos")) {
+            assert!(same_file(&f, &dir.join("BRIEF.TXT")));
+        }
+        assert_eq!(report_path_for(&dir.join("a.anonym.txt")).file_name().unwrap(), "a.anonym.report.json");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

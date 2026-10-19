@@ -36,6 +36,7 @@ fn main() {
             commands::get_rules,
             commands::set_rules,
             commands::default_rules,
+            commands::new_seed,
             commands::import_rules,
             commands::export_rules,
             commands::list_worlds,

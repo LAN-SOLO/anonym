@@ -54,6 +54,33 @@ impl Default for Settings {
     }
 }
 
+impl Settings {
+    /// Werte aus dem WebView auf Gültiges begrenzen. Der Namenszusatz wird Teil eines
+    /// Dateinamens und darf keine Pfadtrenner oder unter Windows verbotene Zeichen tragen.
+    pub fn sanitized(mut self) -> Settings {
+        let d = Settings::default();
+        if !matches!(self.language.as_str(), "de" | "en") {
+            self.language = d.language.clone();
+        }
+        if !matches!(self.theme.as_str(), "dark" | "light") {
+            self.theme = d.theme.clone();
+        }
+        if !matches!(self.accent.as_str(), "blue" | "emerald" | "violet" | "amber") {
+            self.accent = d.accent.clone();
+        }
+        let suffix: String = self.output_suffix.chars().filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control()).collect();
+        let suffix = suffix.trim().trim_end_matches('.').to_string();
+        self.output_suffix = if suffix.is_empty() || suffix.chars().all(|c| c == '.') { d.output_suffix.clone() } else { suffix };
+        if !anonym_core::formats::text::FALLBACKS.contains(&self.fallback_encoding.as_str()) {
+            self.fallback_encoding = d.fallback_encoding.clone();
+        }
+        if !self.write_recover {
+            self.encrypt_recover = false;
+        }
+        self
+    }
+}
+
 fn sys_locale_is_german() -> bool {
     sys_locale::get_locale().map(|l| l.to_lowercase().starts_with("de")).unwrap_or(false)
 }
@@ -81,5 +108,21 @@ pub fn load(config_dir: &std::path::Path) -> Settings {
 pub fn store(config_dir: &std::path::Path, settings: &Settings) {
     if let Ok(json) = serde_json::to_string_pretty(settings) {
         let _ = crate::store::write_atomic(&settings_path(config_dir), json.as_bytes());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitizes_suffix_and_enums() {
+        let s = Settings { output_suffix: "/../x".into(), theme: "neon".into(), fallback_encoding: "utf-7".into(), ..Settings::default() }.sanitized();
+        assert_eq!(s.output_suffix, "..x".trim_end_matches('.'));
+        assert_eq!(s.theme, "dark");
+        assert_eq!(s.fallback_encoding, "windows-1252");
+        assert_eq!(Settings { output_suffix: "..".into(), ..Settings::default() }.sanitized().output_suffix, ".anonym");
+        assert_eq!(Settings { output_suffix: "_anon".into(), ..Settings::default() }.sanitized().output_suffix, "_anon");
+        assert_eq!(Settings { output_suffix: "C:\\a|b".into(), ..Settings::default() }.sanitized().output_suffix, "Cab");
     }
 }
