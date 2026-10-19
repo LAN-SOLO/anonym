@@ -29,6 +29,7 @@ Status: Version 1.0 (Test-Build) — Audit: [AUDIT-1.0.md](AUDIT-1.0.md) — Web
 pnpm install
 pnpm tauri dev
 cargo test --workspace
+pnpm test            # Frontend-Helfer (node --test): Fehler-Übersetzung, Kürzel, Startsprache
 pnpm build
 # Kern ohne App: Analyse als JSON, eigenes Regelwerk
 cargo run -p anonym-core --example anonym-cli -- brief.txt --json --rules=regeln.json

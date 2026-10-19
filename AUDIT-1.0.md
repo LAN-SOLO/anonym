@@ -1,6 +1,6 @@
 # anonym. 1.0 — Audit (Funktion & Sicherheit)
 
-Stand: 2026-10-19 · Basis `5126f76` · Version 1.0.0 (Test-Build für macOS und Windows)
+Stand: 2026-10-20 (Runde 2) · Basis Runde 1 `5126f76`, Runde 2 `a49da59` · Version 1.0.0 (Test-Build für macOS und Windows)
 
 „Getestet“ heißt hier: tatsächlich ausgeführt — Rust-Unit-/Integrationstest, CLI-Lauf oder die
 Web-Oberfläche in headless Chrome gegen eine Mock-IPC-Schicht. „Statisch geprüft“ heißt: Code
@@ -95,9 +95,10 @@ auch unter Windows (Tests nutzen `temp_dir()` und vergleichen nur Dateinamen).
 - Nicht geprüft: XLSX-Zahlenzellen ohne typisierte Kopfzeile, Blattnamen, Kopf-/Fußzeilen von
   Excel-Blättern, Bilder, eingebettete Objekte, `docProps/custom.xml`.
 - DOCX: Ein über zwei Formatierungsläufe verteilter Name erscheint geteilt.
-- Kategoriewechsel einer Fundstelle: neuer Ersatz erst beim Speichern sichtbar (Tabelle/Vorschau zeigen den alten).
-- Fehlermeldungen aus dem Rust-Kern sind deutsch, auch in der englischen Oberfläche.
-- Ändert man die Saat, wird ein vorhandener Pseudonym-Speicher beim nächsten Speichern geleert (dokumentiert).
+- Ändert man die Saat, wird ein vorhandener Pseudonym-Speicher beim nächsten Speichern geleert
+  (dokumentiert; „Neu“ fragt seit Runde 2 bei gefülltem Speicher nach, Tippen ins Saat-Feld nicht).
+- Unbekannte Betriebssystem-Fehler behalten die Systemmeldung (unter Windows in der Sprache des Systems);
+  technische Details hinter einer übersetzten Meldung (serde, zip, HTTP) bleiben englisch.
 - Linux-Builds entstehen in der CI, wurden hier nicht betrachtet.
 
 ## Manuelle Testliste (macOS und Windows)
@@ -124,7 +125,8 @@ Je Plattform mit dem CI-Artefakt 1.0.0, frisches Benutzerkonto oder gelöschter 
 13. masked an: Pseudonym-Speicher nutzen, zwei Dateien speichern (gleiche Person = gleicher Ersatz), Schlüsseldatei exportieren, löschen, wieder laden (Regelwerk übernimmt Saat), „Alle speichern“.
 14. Einstellungen → App: Version 1.0.0, „Auf Updates prüfen“ (ohne Release: Fehlermeldung oder „aktuell“), Website/GitHub öffnen den Browser.
 15. Hell/Dunkel und alle vier Akzente, DE/EN umschalten (auch im Handbuch), Fenster auf Mindestgröße 960×620: nichts verdeckt.
-16. Tastatur: O, S, R, 1–4, ?, ⌘/Strg+, , Esc.
+16. Tastatur: O, S, R, 1–4, ?, ⌘+, (macOS) bzw. Strg+, (Windows), Esc. Einstellungen → App und
+    Handbuch → Tastatur zeigen nur die Taste der eigenen Plattform.
 
 ## Verifikation (unabhängige Zweitprüfung, 2026-10-19)
 
@@ -168,3 +170,83 @@ leer, DOCX/ODT von macOS `textutil` lesbar. Scratch-Dateien danach gelöscht.
 **Nicht selbst geprüft:** echtes Tauri-Fenster, native Dialoge, Drag & Drop, Updater, Installer,
 Öffnen in Word/Excel/LibreOffice ohne Reparaturhinweis, Windows-Laufzeit — siehe manuelle Testliste
 oben (Punkt 8 zusätzlich: ODT aus LibreOffice öffnen, Vorschaubild im Finder/Explorer ist generisch).
+
+## Runde 2 (2026-10-20)
+
+Basis `a49da59`. Alles unten ist im Code behoben, nicht nur beschrieben.
+
+**Behoben**
+- Kategoriewechsel (Rest aus Runde 1): Tabelle und Vorschau zeigten bis zum Speichern den alten
+  Ersatz. Neues Kommando `preview_replacements` rechnet den Ersatz über denselben Weg wie
+  `apply_file` (gemeinsame Funktion `resolve` im Kern) — die Vorschau ist byte-gleich mit der
+  Ausgabe. Test `category_change_preview_matches_output`; UI-Szenario prüft Hin- und Rückwechsel.
+- Fehlermeldungen (L2): Kernfehler sind feste deutsche Texte; `src/errors.ts` übersetzt sie in der
+  englischen Oberfläche (Toast, Fehler-Chip der Datei, Wiederherstellen-Dialog, Update-Prüfung).
+  I/O-Fehler kommen als stabile Texte mit OS-Code (`io_text`: nicht gefunden, gesperrt, Zugriff
+  verweigert, voll, schreibgeschützt, Name ungültig, Pfad zu lang) statt als Systemtext.
+  `tests/errors.test.ts` liest alle `Err(…)`/`ok_or(…)`/`map_err(…)`-Literale aus dem Rust-Code und
+  verlangt für jedes eine englische Übersetzung — neue Fehlertexte ohne Übersetzung lassen den Test rot werden.
+  ZIP-Fehler bei Export/Neuaufbau tragen jetzt ebenfalls „Kein gültiges ZIP-Archiv: …“.
+- Tastenkürzel (L6): „⌘/Strg+,“ war fest verdrahtet. Jetzt ⌘ auf dem Mac, „Strg“ (DE) bzw. „Ctrl“ (EN)
+  sonst — in Einstellungen → App und im Handbuch (`src/platform.ts`).
+- CSV/TSV-Export mit UTF-8-BOM (L4), damit Excel unter Windows Umlaute richtig liest; Regelwerk,
+  Schlüssel-, Recover- und Store-Datei werden mit BOM (Windows-Editor) gelesen. Tests in `recover`,
+  `store`, `formats`.
+- Windows-Dateisystem (L5): Umbenennen der Temp-Datei wird bei Freigabe-/Sperrverletzung und
+  „Zugriff verweigert“ (Virenscanner, OneDrive, Office) bis zu 8-mal mit wachsender Pause (≈2 s)
+  wiederholt (`rename_retry`, nur `cfg!(windows)`). Temp-Namen tragen zusätzlich einen Zähler —
+  vorher teilten sich zwei gleichzeitige Schreibvorgänge auf dieselbe Datei eine Temp-Datei
+  (Test mit 8 Threads). Zielordner „C:“ wird zu „C:\“ (sonst aktueller Ordner auf C:).
+  Umlaute/Leerzeichen im Namen: Test.
+- Haupt-Thread (L8): `import_rules`, `export_rules`, `recover_info`, `store_info`, `store_export`,
+  `store_import` laufen asynchron (bis 64 MB JSON); `set_rules`/`set_settings` bleiben bewusst
+  synchron, damit sie in Reihenfolge geschrieben werden.
+- Laufende Aufgaben (L9): Analyse-Ergebnisse tragen eine Folgenummer je Datei — ein verspätetes
+  Ergebnis einer älteren Analyse (Regeländerung während der Prüfung) überschreibt nicht mehr das
+  neuere. „Alle speichern“ überspringt Dateien, die währenddessen aus der Liste entfernt wurden.
+  Wiederherstellen-Dialog: schnelles Umwählen übernimmt keine veraltete Recover-Vermutung/Info.
+- Bestätigungen und Fehler (L11): „Auf Standard zurücksetzen“ (Regelwerk) lief ohne Rückfrage —
+  jetzt Bestätigung; „Neu“ (Saat) fragt bei gefülltem Pseudonym-Speicher; Entfernen eines nicht
+  leeren eigenen Musters / einer Wortliste fragt. `set_settings` meldete Schreibfehler nicht (still
+  verworfen) — jetzt Fehler-Toast. `store_clear` meldet Fehler übersetzt.
+- Updater (L13): Installationsfehler wurden still verschluckt (nur der Knopf ging zurück) — jetzt
+  Toast in der UI-Sprache, auch beim automatischen Update. Version in Einstellungen → App kommt aus
+  der App (`getVersion`), nicht aus einer Konstante. Updater-Endpunkt (HTTPS, GitHub latest.json)
+  und Pubkey unverändert; der Versionsvergleich ist der semver-Vergleich des Plugins.
+- Erststart (L3): Rust nimmt die Systemsprache über `sys-locale` (nicht `LANG`); die Web-Seite
+  fällt ohne Backend auf `navigator.language` zurück statt fest auf Deutsch.
+- Layout: Spalte „Feinjustierung“ im Regelwerk war ein `display:flex`-`<td>` und versetzte die
+  Zeilenlinien; lange Fehler-Toasts brechen jetzt innerhalb des Fensters um. Standard-Dateinamen
+  der Dialoge (Regelwerk, Schlüsseldatei) folgen der Sprache.
+
+**Geprüft ohne Befund**
+- L1: kein `window.confirm/alert/prompt` im Code; Bestätigungen sind eigene Modals (Promise).
+  Die Mock-IPC bildet das Verhalten von plugin-dialog 2.7 nach (`window.confirm` → Promise).
+- L7: Die Oberfläche rendert Dokumentinhalt nur als React-Text (kein `dangerouslySetInnerHTML`),
+  CSP `default-src 'self'`; HTML-Export maskiert Inhalte.
+- L10: Bericht-Zeit `chrono::Local` mit Offset, Anzeige in Ortszeit; Datumsverschiebung rechnet in
+  Kalendertagen (`NaiveDate`, keine Sommerzeit-Effekte). Neu geschriebene ZIP-Teile (Export)
+  tragen das DOS-Datum 1980-01-01 — keine Zeitzonen-Frage, und es verrät nichts.
+- L12: UI-Szenario sucht in der englischen Oberfläche nach deutschen Wörtern (und umgekehrt) — ohne Treffer.
+
+**Ausgeführt**
+| Befehl | Ergebnis |
+| --- | --- |
+| `cargo test --workspace` | 48 grün (Kern 45, App 3) |
+| `pnpm test` (`node --test`, neu) | 4 grün — Fehler-Übersetzung (inkl. Abgleich aller Rust-Fehlertexte), Kürzel, Startsprache |
+| `pnpm build` | grün |
+| `cargo check --target x86_64-pc-windows-msvc --workspace --tests` (vom Mac, ohne Linken) | grün |
+| `cargo clippy --workspace --tests` | nur vorbestehende Stilhinweise |
+| `cargo audit` | keine neuen Befunde; zip 2.4.2/4.6.1 RUSTSEC-2026-0367…0369 nur `extract()` (nicht genutzt, Fix erst in zip 9 = Major), sonst „unmaintained“-Hinweise des Linux-/Build-Unterbaus |
+| UI-Szenario headless Chromium, Mock-IPC, 960×620 | 13 Schritte × 4 (DE/EN × dunkel/hell, je macOS- und Windows-User-Agent) = 52 grün: Datei öffnen, Kategoriewechsel mit Vorschau, Rückwechsel, Speichern, Speicherfehler (gesperrte Datei) übersetzt, Regelwerk-Tabelle, Muster-Entfernen-Abfrage, Zurücksetzen (Abbrechen/OK), neue Saat mit Abfrage, Einstellungen alle Reiter, Update-Fehler, Wiederherstellen-Fehler übersetzt, Handbuch-Kürzel; kein Überlauf, keine fremdsprachigen Texte |
+
+**Nur auf echter Hardware prüfbar** (zusätzlich zur manuellen Liste oben)
+- Windows: Datei während des Speicherns von Virenscanner/OneDrive gesperrt → Speichern gelingt nach
+  kurzer Pause; dauerhaft in Excel geöffnet → Meldung „Datei wird von einem anderen Programm
+  verwendet …“ (DE) bzw. „The file is in use by another program …“ (EN), keine `.anonym-tmp`-Reste.
+- Windows: CSV-Export in Excel per Doppelklick öffnen → Umlaute korrekt; Regelwerk im Editor
+  speichern (UTF-8 mit BOM) und laden.
+- Windows: Einstellungen → App zeigt „Strg+,“; macOS „⌘+,“; Strg/⌘+, öffnet die Einstellungen.
+- Zielordner „D:“ in den Einstellungen → Ausgabe landet in `D:\`.
+- Update-Installation mit echtem Release (1.0.0 → 1.0.1) und ein absichtlich fehlschlagender
+  Download → Fehlermeldung in der UI-Sprache.
