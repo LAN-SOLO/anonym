@@ -138,6 +138,8 @@ export default function App() {
   const ask = useCallback(
     (text: string, ok?: string, alt?: string) =>
       new Promise<Answer>((resolve) => {
+        // Eine noch offene Rückfrage (z. B. Doppelklick) gilt als abgebrochen, statt ewig zu hängen
+        confirmResolve.current?.('cancel');
         confirmResolve.current = resolve;
         setConfirm({ text, ok, alt });
       }),
@@ -150,6 +152,7 @@ export default function App() {
   const askText = useCallback(
     (title: string, label: string, repeat = false) =>
       new Promise<string | null>((resolve) => {
+        promptResolve.current?.(null);
         promptResolve.current = resolve;
         setPrompt({ title, label, repeat });
       }),
@@ -355,17 +358,21 @@ export default function App() {
 
   // Kategoriewechsel: den neuen Ersatz vom Backend rechnen lassen (gleicher Weg wie beim
   // Speichern), damit Tabelle und Vorschau schon vorher zeigen, was geschrieben wird
+  // Je Datei nur neu rechnen, wenn sich etwas Relevantes geändert hat (Regelwerk, Analyse,
+  // Kategorie-Entscheidungen, Pseudonym-Speicher nach einem Speichern): jede Anfrage liest und
+  // analysiert die Datei vollständig. Laufnummer je Datei: ein älteres Ergebnis wird verworfen.
   const previewTimer = useRef<number | undefined>(undefined);
-  const previewSeq = useRef(0);
+  const previewReq = useRef<Record<string, { rules: Rules; analysis: object; sig: string; seq: number }>>({});
+  const storeGen = useRef(0);
   useEffect(() => {
     if (!rules) return;
     window.clearTimeout(previewTimer.current);
     previewTimer.current = window.setTimeout(() => {
-      const seq = ++previewSeq.current;
       for (const f of filesRef.current) {
         if (!f.analysis) continue;
         const ds = Object.values(decisions[f.path] ?? {});
         if (!ds.some((d) => d.category && d.accept && d.replacement == null)) {
+          delete previewReq.current[f.path];
           setCatPreview((p) => {
             if (!(f.path in p)) return p;
             const { [f.path]: _drop, ...rest } = p;
@@ -373,16 +380,32 @@ export default function App() {
           });
           continue;
         }
+        // Nur Kategorie-Entscheidungen beeinflussen den neuen Ersatz (Reihenfolge im Pseudonymisierer)
+        const sig =
+          `${storeGen.current}\u0002` +
+          ds
+            .filter((d) => d.category)
+            .map((d) => `${d.key ?? d.id}\u0001${d.category}\u0001${d.accept ? 1 : 0}\u0001${d.replacement == null ? 0 : 1}`)
+            .sort()
+            .join('\u0002');
+        const last = previewReq.current[f.path];
+        if (last && last.rules === rules && last.analysis === f.analysis && last.sig === sig) continue;
+        const seq = (last?.seq ?? 0) + 1;
+        const path = f.path;
+        previewReq.current[path] = { rules, analysis: f.analysis, sig, seq };
         const list = ds.map(({ key: _key, preview: _preview, ...d }) => d);
         api
-          .previewReplacements(f.path, rules, list)
+          .previewReplacements(path, rules, list)
           .then((res) => {
-            if (seq !== previewSeq.current) return;
+            if (previewReq.current[path]?.seq !== seq) return;
             const m: Record<string, string> = {};
             for (const r of res) m[`${keyOf(r)}\u0000${r.category}`] = r.replacement;
-            setCatPreview((p) => ({ ...p, [f.path]: m }));
+            setCatPreview((p) => ({ ...p, [path]: m }));
           })
-          .catch(() => {});
+          .catch(() => {
+            // Beim nächsten Anlass erneut versuchen (Tabelle zeigt bis dahin den alten Vorschlag)
+            if (previewReq.current[path]?.seq === seq) previewReq.current[path] = { ...previewReq.current[path], sig: '' };
+          });
       }
     }, 150);
     return () => window.clearTimeout(previewTimer.current);
@@ -429,6 +452,8 @@ export default function App() {
       }
       try {
         const res = await api.applyFile(entry.path, rules, list, output, sessionPw.current ?? undefined);
+        // Pseudonym-Speicher kann gewachsen sein: Vorschauen für Kategoriewechsel neu rechnen
+        storeGen.current++;
         setFiles((fs) =>
           fs.map((f) => (f.path === entry.path ? { ...f, status: 'done', result: res, outputs: [...(f.outputs ?? []).filter((o) => o.output !== res.output), res] } : f))
         );

@@ -250,3 +250,62 @@ Basis `a49da59`. Alles unten ist im Code behoben, nicht nur beschrieben.
 - Zielordner „D:“ in den Einstellungen → Ausgabe landet in `D:\`.
 - Update-Installation mit echtem Release (1.0.0 → 1.0.1) und ein absichtlich fehlschlagender
   Download → Fehlermeldung in der UI-Sprache.
+
+## Runde 2 – Verifikation (unabhängige Zweitprüfung, 2026-10-20)
+
+Geprüft: Diff `a49da59..2364fe0` mit Blick auf Plattform-Regressionen und neue Async-/Race-Fälle,
+alle Tests/Typprüfungen neu ausgeführt, UI-Szenario erneut (plus ein neuer Schritt), L1–L13 an
+Stellen nachgesehen, die Runde 2 nicht genannt hat.
+
+**Bestätigt (gelesen und ausgeführt)**
+- Kategorie-Vorschau: `preview_replacements` und `apply_file` gehen durch dasselbe `resolve`; der
+  Test `category_change_preview_matches_output` läuft, das UI-Szenario zeigt den neuen Ersatz und
+  den Rückwechsel.
+- Fehler-Übersetzung: zusätzlich alle deutschsprachigen String-Literale außerhalb der Tests (nicht nur
+  die in `Err/ok_or/map_err`-Zeilen) gegen `errorText('en', …)` geprüft — offen bleiben nur
+  Erkennungsmuster, Ersatz-Dateistämme und Platzhalter, keine Fehlertexte.
+- `rename_retry`, eindeutige Temp-Namen, BOM in CSV/TSV, BOM-tolerante JSON-Importe, async-Kommandos,
+  Laufnummern bei Analyse/Wiederherstellen, „Alle speichern“ nach Entfernen, Bestätigungen.
+- L1 (kein `window.confirm`), L3 (sys-locale + `navigator.language`), L7, L10, L13 (Endpoint/Pubkey,
+  Version 1.0.0 in `tauri.conf.json`, `package.json`, beiden `Cargo.toml`) nachgesehen.
+- zip 4.6.1 kommt nur über `tauri-plugin-updater` (signierte Update-Pakete), anonym ruft nirgends
+  `extract()` auf — die Advisories bleiben ohne Wirkung.
+
+**Behoben in dieser Verifikation**
+- Kategorie-Vorschau rechnete zu oft: Der Effekt lief bei jeder Änderung an Entscheidungen oder an
+  der Dateiliste (auch Status „analysiert“/„gespeichert“) neu und schickte für jede Datei mit
+  Kategoriewechsel eine vollständige Neuanalyse ins Backend — beim Ablehnen einer beliebigen
+  anderen Fundstelle ebenso wie bei „Alle speichern“ (n Dateien → n² Analysen). Jetzt rechnet eine
+  Datei nur neu, wenn sich Regelwerk, Analyse, die Kategorie-Entscheidungen oder (nach einem
+  Speichern) der Pseudonym-Speicher geändert haben; die Laufnummer gilt je Datei. UI-Szenario,
+  neuer Schritt `previewCache`: Ablehnen + Annehmen einer anderen Fundstelle → vorher 2 zusätzliche
+  Backend-Läufe, jetzt 0.
+- Rückfrage-/Eingabe-Promise: Eine zweite Rückfrage, solange die erste offen ist (z. B. Doppelklick
+  auf den Papierkorb), überschrieb deren Auflösung — die erste wartete für immer. Sie gilt jetzt als
+  abgebrochen.
+- `settings.json` wurde ohne BOM-Toleranz und ohne Bereinigung geladen: Mit dem Windows-Editor
+  gespeichert (BOM) fielen alle Einstellungen still auf Standard zurück, und ein in einem früheren
+  Testbuild gespeicherter Zielordner „D:“ blieb bis zum nächsten Speichern „D:“. Laden übergeht
+  jetzt das BOM und bereinigt wie beim Speichern (Test `load_accepts_bom_and_sanitizes`).
+- Handbuch/README: keine Änderung nötig (interne Korrekturen ohne neues sichtbares Verhalten).
+
+**Ausgeführt**
+| Befehl | Ergebnis |
+| --- | --- |
+| `cargo test --workspace` | 49 grün (Kern 45, App 4) |
+| `pnpm test` | 4 grün |
+| `pnpm build` | grün |
+| `cargo check --target x86_64-pc-windows-msvc --workspace --tests` (vom Mac, ohne Linken, nach erzwungenem Neu-Check) | grün, keine Warnungen |
+| `cargo clippy --workspace --tests` | nur die vorbestehenden Stilhinweise |
+| `cargo audit` | unverändert (zip `extract()`-Advisories, „unmaintained“-Hinweise) |
+| UI-Szenario headless Chromium, Mock-IPC (plugin-dialog 2.7), 960×620 | 14 Schritte × 4 Konfigurationen = 56 grün, kein Überlauf, keine fremdsprachigen Texte, keine Seitenfehler |
+
+**Bekannt, nicht geändert**
+- Saat von Hand eintippen leert einen gefüllten Speicher beim nächsten Speichern ohne Rückfrage
+  (dokumentiert); „Speicher löschen“ stößt keine Neuanalyse an — angezeigte Pseudonyme stammen bis
+  zur nächsten Analyse noch aus dem alten Speicher (geschrieben wird korrekt neu).
+- `rename_retry` wiederholt unter Windows auch bei „Zugriff verweigert“ (5) — bei einer dauerhaft
+  schreibgeschützten Zieldatei oder einem gleichnamigen Ordner kommt die Meldung erst nach ~2 s.
+
+**Nur auf echter Hardware prüfbar**: unverändert die Listen oben (Runde 2 und Manuelle Testliste),
+zusätzlich: `settings.json` im Windows-Editor speichern → Einstellungen bleiben erhalten.

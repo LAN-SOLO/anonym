@@ -102,10 +102,13 @@ fn settings_path(config_dir: &std::path::Path) -> PathBuf {
     config_dir.join("settings.json")
 }
 
+/// Einstellungen laden: ein UTF-8-BOM (Windows-Editor) wird übergangen, und die Werte laufen
+/// durch dieselbe Bereinigung wie beim Speichern (z. B. „D:“ aus einer älteren Datei → „D:\“).
 pub fn load(config_dir: &std::path::Path) -> Settings {
-    std::fs::read_to_string(settings_path(config_dir))
+    std::fs::read(settings_path(config_dir))
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|b| serde_json::from_slice::<Settings>(anonym_core::formats::text::strip_bom(&b)).ok())
+        .map(Settings::sanitized)
         .unwrap_or_default()
 }
 
@@ -130,5 +133,18 @@ mod tests {
         assert_eq!(Settings { output_dir: " D: ".into(), ..Settings::default() }.sanitized().output_dir, "D:\\");
         assert_eq!(Settings { output_dir: "D:\\Export".into(), ..Settings::default() }.sanitized().output_dir, "D:\\Export");
         assert_eq!(Settings { output_dir: "/Users/a b/Ausgabe".into(), ..Settings::default() }.sanitized().output_dir, "/Users/a b/Ausgabe");
+    }
+
+    #[test]
+    fn load_accepts_bom_and_sanitizes() {
+        let d = std::env::temp_dir().join(format!("anonym-settings-test-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let s = Settings { output_dir: "D:".into(), language: "en".into(), ..Settings::default() };
+        let json = serde_json::to_vec(&s).unwrap();
+        std::fs::write(settings_path(&d), [&[0xEF, 0xBB, 0xBF][..], &json].concat()).unwrap();
+        let l = load(&d);
+        assert_eq!(l.language, "en");
+        assert_eq!(l.output_dir, "D:\\");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
