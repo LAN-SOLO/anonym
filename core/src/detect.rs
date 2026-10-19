@@ -58,7 +58,8 @@ fn patterns() -> &'static Patterns {
         email: Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}").unwrap(),
         iban: Regex::new(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,4})?\b").unwrap(),
         card: Regex::new(r"\b(?:\d[ -]?){12,18}\d\b").unwrap(),
-        phone: Regex::new(r"(?:\+\d{1,3}[ .-]?(?:\(0\)[ ]?)?)?(?:\(0?\d{1,5}\)|0\d{1,5})[ ./-]?\d{2,8}(?:[ ./-]\d{1,8}){0,4}(?:-\d{1,3})?").unwrap(),
+        // International (+49 160 …, +49 (0)221 …) ohne führende 0 der Vorwahl, sonst national (0221 …, (0221) …)
+        phone: Regex::new(r"(?:\+\d{1,3}[ .-]?(?:\(0\)[ ]?)?(?:\(\d{1,5}\)|\d{1,5})|\(0?\d{1,5}\)|0\d{1,5})[ ./-]?\d{2,8}(?:[ ./-]\d{1,8}){0,4}(?:-\d{1,3})?").unwrap(),
         ipv4: Regex::new(r"\b(?:\d{1,3}\.){3}\d{1,3}\b").unwrap(),
         ipv6: Regex::new(r"\b(?:[0-9a-fA-F]{1,4}:){3,7}[0-9a-fA-F]{1,4}\b").unwrap(),
         plate: Regex::new(r"\b[A-ZÄÖÜ]{1,3}-[A-Z]{1,2}[ ]?\d{1,4}[EH]?\b").unwrap(),
@@ -684,6 +685,16 @@ mod tests {
         assert!(found.contains(&(Category::Person, "Jonas Berger".into())));
         assert!(found.contains(&(Category::Date, "02.07.1981".into())));
         assert!(!cats.contains(&Category::Address));
+    }
+
+    #[test]
+    fn international_phone_numbers() {
+        // Runde 3: „+49 160 …“ (Vorwahl ohne 0) wurde nicht erkannt
+        let found = run("Mobil +49 160 95929195, Büro +49 (0)221 47110, alt 0049 221 4711 und 0221 4711-0. Am 02.07.1981.");
+        for p in ["+49 160 95929195", "+49 (0)221 47110", "0049 221 4711", "0221 4711-0"] {
+            assert!(found.contains(&(Category::Phone, p.into())), "{p}: {found:?}");
+        }
+        assert!(found.contains(&(Category::Date, "02.07.1981".into())), "{found:?}");
     }
 
     #[test]

@@ -191,7 +191,7 @@ pub async fn apply_file(st: State<'_, Shared>, path: String, rules: Rules, decis
         }
         let report_path = if s.write_report {
             let rp = report_target;
-            let json = serde_json::to_string_pretty(&applied.report).map_err(|e| e.to_string())?;
+            let json = serde_json::to_string_pretty(&report_for_disk(&applied.report, s.write_recover && s.encrypt_recover)).map_err(|e| e.to_string())?;
             store::write_atomic(&rp, json.as_bytes())?;
             Some(rp.to_string_lossy().into_owned())
         } else {
@@ -210,6 +210,19 @@ pub async fn apply_file(st: State<'_, Shared>, path: String, rules: Rules, decis
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Bericht, wie er neben die Ausgabe geschrieben wird. Ist die Recover-Datei verschlüsselt,
+/// fehlen im Bericht die Originalwerte — sonst stünde im Klartext daneben, was das Passwort
+/// schützen soll. Der Reiter „Bericht“ zeigt weiter alles (nur in der Sitzung).
+pub(crate) fn report_for_disk(report: &Report, encrypted_recover: bool) -> Report {
+    let mut r = report.clone();
+    if encrypted_recover {
+        for e in &mut r.entries {
+            e.original = String::new();
+        }
+    }
+    r
 }
 
 /// Zeigen zwei Pfade auf dieselbe Datei? Vorhandene Dateien über den kanonischen Pfad
@@ -416,5 +429,16 @@ mod tests {
         }
         assert_eq!(report_path_for(&dir.join("a.anonym.txt")).file_name().unwrap(), "a.anonym.report.json");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn encrypted_recover_keeps_originals_out_of_report_file() {
+        let e = anonym_core::ReportEntry { category: anonym_core::Category::Person, original: "Anna Berger".into(), replacement: "Lena Vogt".into(), count: 2 };
+        let rep = Report { tool: "anonym".into(), version: "1.0.0".into(), created: String::new(), source: String::new(), output: String::new(), format: "Text".into(), rules: String::new(), world: "de".into(), date_shift_days: 3, replaced: 2, rejected: 0, by_category: Default::default(), entries: vec![e] };
+        let plain = serde_json::to_string(&report_for_disk(&rep, false)).unwrap();
+        assert!(plain.contains("Anna Berger"));
+        let sealed = serde_json::to_string(&report_for_disk(&rep, true)).unwrap();
+        assert!(!sealed.contains("Anna"), "{sealed}");
+        assert!(sealed.contains("Lena Vogt") && sealed.contains("\"count\":2"));
     }
 }

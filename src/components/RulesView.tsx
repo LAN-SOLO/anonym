@@ -72,10 +72,26 @@ export function RulesView({
   const newSeed = async () => {
     const info = await api.storeInfo().catch(() => null);
     if (info && info.entries > 0 && !(await onConfirm(t.rulesNewSeedConfirm(info.entries), t.rulesNewSeed))) return;
+    setSeedDraft(null);
     api
       .newSeed()
       .then((seed) => patch({ seed }))
       .catch(onFail);
+  };
+  // Saat von Hand: erst beim Verlassen des Felds (oder Enter) übernehmen und — wie „Neu“ —
+  // bei gefülltem Speicher nachfragen; leer oder Abbrechen stellt die bisherige Saat wieder her
+  const [seedDraft, setSeedDraft] = useState<string | null>(null);
+  const commitSeed = async () => {
+    if (seedDraft == null) return;
+    const next = seedDraft.trim();
+    if (!next || next === rules.seed) {
+      setSeedDraft(null);
+      return;
+    }
+    const info = await api.storeInfo().catch(() => null);
+    const ok = !(info && info.entries > 0) || (await onConfirm(t.rulesSeedChangeConfirm(info.entries), t.rulesSeedChange));
+    setSeedDraft(null);
+    if (ok) patch({ seed: next });
   };
   const removePattern = async (i: number) => {
     const p = rules.customPatterns[i];
@@ -98,7 +114,17 @@ export function RulesView({
         <label className="field grow1">
           <span>{t.rulesSeed}</span>
           <div className="pickrow" style={{ margin: 0 }}>
-            <input type="text" value={rules.seed} spellCheck={false} onChange={(e) => patch({ seed: e.target.value })} />
+            <input
+              type="text"
+              value={seedDraft ?? rules.seed}
+              spellCheck={false}
+              onChange={(e) => setSeedDraft(e.target.value)}
+              onBlur={commitSeed}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+                if (e.key === 'Escape') setSeedDraft(null);
+              }}
+            />
             <button title={t.rulesNewSeedHint} onClick={newSeed}>
               {t.rulesNewSeed}
             </button>

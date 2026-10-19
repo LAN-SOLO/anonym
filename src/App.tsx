@@ -530,22 +530,26 @@ export default function App() {
         }
         return;
       }
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Offener Dialog: Esc schließt nur den obersten (Rückfrage über Einstellungen schließt
+      // nicht beide) — auch wenn der Fokus in einem Eingabefeld steht (Passwort, Einstellungen)
       if (showSettings || confirm || prompt || showRecover) {
         if (e.key === 'Escape') {
-          if (showSettings) {
+          if (confirm) settleConfirm('cancel');
+          else if (prompt) settlePrompt(null);
+          else if (showRecover) setShowRecover(false);
+          else if (showSettings) {
             if (settingsBackup) setSettings(settingsBackup);
             setSettingsBackup(null);
             setShowSettings(false);
           }
-          if (confirm) settleConfirm('cancel');
-          if (prompt) settlePrompt(null);
-          if (showRecover) setShowRecover(false);
         }
         return;
       }
-      switch (e.key) {
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Handbuch/Tutorial offen: keine Aktionen dahinter auslösen (Esc schließt es selbst)
+      if (document.querySelector('.hlp-overlay')) return;
+      switch (e.key.length === 1 ? e.key.toLowerCase() : e.key) {
         case 'o':
           pickFiles();
           break;
@@ -748,6 +752,11 @@ export default function App() {
           onSave={saveSettings}
           onLive={(s) => setSettings(s)}
           onConfirm={onConfirm}
+          onStoreCleared={() => {
+            // Angezeigte Pseudonyme stammen aus dem alten Speicher: neu analysieren
+            storeGen.current++;
+            reanalyzeAll(rules);
+          }}
           onRulesReload={() => api.getRules().then((r) => {
             setRules(r);
             reanalyzeAll(r);

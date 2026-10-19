@@ -248,6 +248,25 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Runde 3: schreibgeschützter Zielordner (Unix-Rechte; unter Windows nur manuell prüfbar)
+    #[cfg(unix)]
+    #[test]
+    fn read_only_folder_gives_stable_error_and_no_temp() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("anonym-ro-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let res = write_bytes(b"x", &dir.join("brief.anonym.txt"));
+        let leftovers = std::fs::read_dir(&dir).unwrap().count();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        // root darf trotzdem schreiben — dann ist der Fall hier nicht prüfbar
+        if let Err(e) = res {
+            assert!(e.starts_with("Schreiben fehlgeschlagen: Zugriff verweigert"), "{e}");
+            assert_eq!(leftovers, 0);
+        }
+    }
+
     #[test]
     fn strips_utf8_bom() {
         assert_eq!(text::strip_bom(b"\xEF\xBB\xBF{}"), b"{}");

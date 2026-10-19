@@ -295,8 +295,14 @@ impl Pseudonymizer {
         let mut keep: HashSet<usize> = HashSet::new();
         if groups.len() >= 2 {
             keep.insert(0);
-            if original.trim_start().starts_with('+') && groups.len() >= 3 {
+            // International (+49 … / 0049 …): Ländervorwahl und Vorwahl bleiben; „(0)“ dazwischen zählt nicht
+            let t = original.trim_start();
+            if (t.starts_with('+') || t.starts_with("00")) && groups.len() >= 3 {
                 keep.insert(1);
+                let (s1, e1) = groups[1];
+                if &original[s1..e1] == "0" && original[e1..].starts_with(')') && groups.len() >= 4 {
+                    keep.insert(2);
+                }
             }
             // Durchwahl „-0“ / „-12“ am Ende bleibt
             let (ls, le) = groups[groups.len() - 1];
@@ -763,6 +769,10 @@ mod tests {
         assert_ne!(phone, "0221 4711-0");
         let intl = a.phone("+49 30 123456");
         assert!(intl.starts_with("+49 30 "));
+        // „(0)“ und 00-Präfix: Vorwahl bleibt trotzdem (Runde 3)
+        assert!(a.phone("+49 (0)221 47110").starts_with("+49 (0)221 "));
+        assert!(a.phone("0049 221 4711").starts_with("0049 221 "));
+        assert!(a.phone("+49 160 95929195").starts_with("+49 160 "));
         assert_eq!(a.ip("192.168.1.42").split('.').take(2).collect::<Vec<_>>(), vec!["192", "168"]);
         let id = a.customer_id("10482");
         assert_eq!(id.len(), 5);

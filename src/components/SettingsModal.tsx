@@ -23,6 +23,7 @@ export function SettingsModal({
   onLive,
   onConfirm,
   onRulesReload,
+  onStoreCleared,
   onToast,
   onFail,
 }: {
@@ -33,6 +34,7 @@ export function SettingsModal({
   onLive: (s: Settings) => void;
   onConfirm: (text: string) => Promise<boolean>;
   onRulesReload: () => void;
+  onStoreCleared: () => void;
   onToast: (msg: string) => void;
   onFail: (e: unknown) => void;
 }) {
@@ -87,6 +89,7 @@ export function SettingsModal({
       .storeClear()
       .then(() => {
         onToast(t.storeCleared);
+        onStoreCleared();
         return api.storeInfo().then(setStore);
       })
       .catch(onFail);

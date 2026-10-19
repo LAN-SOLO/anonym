@@ -7,7 +7,7 @@ Anonymisieren ohne KI — Wörterbücher, Muster, Prüfziffern. Lokal, ohne Kont
   Kennzeichen, IP-Adressen, Kunden-/Aktenzeichen — per Wörterbuch, Muster, Prüfziffer (Mod 97, Luhn,
   Mod 11,10), Kontext (Anrede, Beschriftung) und Tabellenspalten (Kopfzeile, feste Spaltenbreiten).
 - **Ersetzung:** stimmig statt geschwärzt — anderer Name mit gleichem Genus, Familien behalten den
-  Nachnamen, IBAN mit gültiger Prüfziffer und gleicher Bank, Telefon mit gleicher Vorwahl, Datum um
+  Nachnamen, IBAN mit gültiger Prüfziffer und gleicher Bank, Telefon mit gleicher Vorwahl (auch international, `+49 160 …`), Datum um
   denselben Betrag verschoben. Alternativ Platzhalter `[PERSON 3]`, Schwärzen, Maskieren, Löschen.
 - **Deterministisch:** gleiche Saat + gleiche Datei = gleiche Ausgabe. Keine KI. Die Saat wird je
   Installation zufällig erzeugt und wirkt wie ein Schlüssel — ohne sie lassen sich Pseudonyme nicht nachrechnen.
@@ -16,7 +16,9 @@ Anonymisieren ohne KI — Wörterbücher, Muster, Prüfziffern. Lokal, ohne Kont
   Bei DOCX/XLSX/ODF werden Metadaten (Autor, Firma, Kommentar-Autoren) entfernt, gelöschter Text,
   Kommentare und `mailto:`-Links mitgeprüft.
 - **Vorschau & Bericht:** jede Fundstelle vor dem Schreiben prüfen, annehmen, ablehnen, Ersatz
-  ändern, Ausnahmen setzen; Bericht als JSON neben der Ausgabe.
+  ändern, Ausnahmen setzen; Bericht als JSON neben der Ausgabe (bei verschlüsselter
+  Recover-Datei ohne Originalwerte). Saat-Änderungen fragen nach, solange der Pseudonym-Speicher
+  Einträge hat; „Speicher löschen“ analysiert offene Dateien neu.
 - **Free** bleibt kostenlos; **masked** (12 €/Jahr, im Vorabzugang frei) bringt Feinjustierung bis ins
   Zeichen, Pseudonym-Speicher über Dateien (Schlüsseldatei), eigene Muster und Wortlisten, weitere
   Codepages und „Alle speichern“.
