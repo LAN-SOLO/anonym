@@ -561,7 +561,7 @@ pub fn rebuild(c: &Container, old_text: &str, new_text: &str) -> Result<Vec<u8>,
     }
     // Leerzeichen am Rand brauchen xml:space="preserve" (DOCX); vorhandene Attribute behalten
     let cursor = Cursor::new(c.bytes.as_slice());
-    let mut archive = ZipArchive::new(cursor).map_err(|e| e.to_string())?;
+    let mut archive = ZipArchive::new(cursor).map_err(|e| format!("Kein gültiges ZIP-Archiv: {e}"))?;
     let mut out = Cursor::new(Vec::with_capacity(c.bytes.len()));
     {
         let mut writer = ZipWriter::new(&mut out);

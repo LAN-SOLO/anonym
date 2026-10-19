@@ -25,7 +25,7 @@ pub fn store_path(config_dir: &Path) -> PathBuf {
 /// Datumsverschiebung für jeden nachrechenbar. Ein gefüllter Pseudonym-Speicher hängt an
 /// seiner Saat; dann bleibt sie (Hinweis im Regelwerk).
 pub fn load_rules(config_dir: &Path) -> Rules {
-    let mut rules: Rules = std::fs::read_to_string(rules_path(config_dir)).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let mut rules: Rules = std::fs::read(rules_path(config_dir)).ok().and_then(|b| parse_rules(&b).ok()).unwrap_or_default();
     let store_in_use = load_store(config_dir).map(|s| !s.entries.is_empty() && s.seed == rules.seed).unwrap_or(false);
     if rules.seed == anonym_core::pseudo::LEGACY_DEFAULT_SEED && !store_in_use {
         rules.seed = anonym_core::pseudo::random_seed();
@@ -44,13 +44,13 @@ pub fn save_rules(config_dir: &Path, rules: &Rules) -> Result<(), String> {
     write_atomic(&rules_path(config_dir), json.as_bytes())
 }
 
-pub fn read_rules(path: &Path) -> Result<Rules, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("Regelwerk nicht lesbar: {e}"))?;
-    serde_json::from_str(&text).map_err(|e| format!("Kein gültiges Regelwerk: {e}"))
+/// Regelwerk aus JSON-Bytes (ein UTF-8-BOM vom Windows-Editor wird übergangen).
+pub fn parse_rules(bytes: &[u8]) -> Result<Rules, String> {
+    serde_json::from_slice(anonym_core::formats::text::strip_bom(bytes)).map_err(|e| format!("Kein gültiges Regelwerk: {e}"))
 }
 
 pub fn load_store(config_dir: &Path) -> Option<Store> {
-    std::fs::read_to_string(store_path(config_dir)).ok().and_then(|s| serde_json::from_str(&s).ok())
+    std::fs::read(store_path(config_dir)).ok().and_then(|b| serde_json::from_slice(anonym_core::formats::text::strip_bom(&b)).ok())
 }
 
 pub fn save_store(config_dir: &Path, store: &Store) -> Result<(), String> {
@@ -91,7 +91,15 @@ mod tests {
         let d = dir("own");
         save_rules(&d, &Rules { seed: "meine-saat".into(), ..Rules::default() }).unwrap();
         assert_eq!(load_rules(&d).seed, "meine-saat");
-        for n in ["first", "legacy", "store", "own"] {
+        // Regelwerk/Schlüsseldatei mit UTF-8-BOM (Windows-Editor)
+        let json = serde_json::to_vec(&Rules { seed: "bom".into(), ..Rules::default() }).unwrap();
+        assert_eq!(parse_rules(&[&[0xEF, 0xBB, 0xBF][..], &json].concat()).unwrap().seed, "bom");
+        let d = dir("bom");
+        let mut st = Store { seed: "s".into(), world: "de".into(), ..Store::default() };
+        st.entries.insert("last|berger".into(), "Vogt".into());
+        std::fs::write(store_path(&d), [&[0xEF, 0xBB, 0xBF][..], &serde_json::to_vec(&st).unwrap()].concat()).unwrap();
+        assert_eq!(load_store(&d).unwrap().entries.len(), 1);
+        for n in ["first", "legacy", "store", "own", "bom"] {
             let _ = std::fs::remove_dir_all(std::env::temp_dir().join(format!("anonym-store-test-{}-{n}", std::process::id())));
         }
     }

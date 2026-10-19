@@ -5,7 +5,9 @@ use crate::state::AppState;
 use crate::store;
 use anonym_core::export::Target;
 use anonym_core::recover::{self, RecoverResult};
-use anonym_core::{Analysis, Decision, Options, Report, Rules, WORLD_IDS};
+use anonym_core::formats::io_text;
+use anonym_core::formats::text::strip_bom;
+use anonym_core::{Analysis, Decision, Options, ReplacementPreview, Report, Rules, WORLD_IDS};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -71,11 +73,13 @@ pub fn get_settings(st: State<'_, Shared>) -> Settings {
     st.settings_clone()
 }
 
+/// Bleibt synchron (Haupt-Thread): Aufrufe werden so in Reihenfolge geschrieben. Ein
+/// Schreibfehler geht an die Oberfläche, statt still verloren zu gehen.
 #[tauri::command]
-pub fn set_settings(st: State<'_, Shared>, settings: Settings) {
+pub fn set_settings(st: State<'_, Shared>, settings: Settings) -> Result<(), String> {
     let settings = settings.sanitized();
-    settings::store(&st.config_dir, &settings);
-    *st.settings.lock().unwrap() = settings;
+    *st.settings.lock().unwrap() = settings.clone();
+    settings::store(&st.config_dir, &settings)
 }
 
 #[tauri::command]
@@ -108,16 +112,17 @@ pub fn new_seed() -> String {
     anonym_core::pseudo::random_seed()
 }
 
-#[tauri::command]
+// Datei-Kommandos laufen mit `async` nicht auf dem Haupt-Thread (bis 64 MB JSON).
+#[tauri::command(async)]
 pub fn import_rules(st: State<'_, Shared>, path: String) -> Result<Rules, String> {
-    read_small(Path::new(&path), "Regelwerk")?;
-    let rules = store::read_rules(Path::new(&path))?;
+    let bytes = read_small(Path::new(&path), "Regelwerk")?;
+    let rules = store::parse_rules(&bytes)?;
     store::save_rules(&st.config_dir, &rules)?;
     *st.rules.lock().unwrap() = rules.clone();
     Ok(rules)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_rules(rules: Rules, path: String) -> Result<(), String> {
     let json = serde_json::to_string_pretty(&rules).map_err(|e| e.to_string())?;
     store::write_atomic(Path::new(&path), json.as_bytes())
@@ -135,6 +140,16 @@ pub async fn analyze_file(st: State<'_, Shared>, path: String, rules: Rules) -> 
     let st = st.inner().clone();
     let opts = options(&st);
     tauri::async_runtime::spawn_blocking(move || anonym_core::analyze(Path::new(&path), &rules, &st.dicts, &opts))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Ersatz für Fundstellen mit geänderter Kategorie (Vorschau in Tabelle und Reiter „Vorschau“).
+#[tauri::command]
+pub async fn preview_replacements(st: State<'_, Shared>, path: String, rules: Rules, decisions: Vec<Decision>) -> Result<Vec<ReplacementPreview>, String> {
+    let st = st.inner().clone();
+    let opts = options(&st);
+    tauri::async_runtime::spawn_blocking(move || anonym_core::preview_replacements(Path::new(&path), &rules, &st.dicts, &opts, &decisions))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -225,16 +240,16 @@ fn report_path_for(out: &Path) -> PathBuf {
 /// JSON-Dateien (Recover-Datei, Schlüsseldatei, Regelwerk) mit Größenbremse lesen.
 pub(crate) fn read_small(path: &Path, what: &str) -> Result<Vec<u8>, String> {
     const MAX: u64 = 64 * 1024 * 1024;
-    let meta = std::fs::metadata(path).map_err(|e| format!("{what} nicht lesbar: {e}"))?;
+    let meta = std::fs::metadata(path).map_err(|e| format!("{what} nicht lesbar: {}", io_text(&e)))?;
     if !meta.is_file() || meta.len() > MAX {
         return Err(format!("{what}: keine Datei oder größer als 64 MB"));
     }
-    std::fs::read(path).map_err(|e| format!("{what} nicht lesbar: {e}"))
+    std::fs::read(path).map(|b| strip_bom(&b).to_vec()).map_err(|e| format!("{what} nicht lesbar: {}", io_text(&e)))
 }
 
 // --- Rückübersetzung ---------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn recover_info(path: String) -> Result<RecoverInfo, String> {
     let bytes = read_small(Path::new(&path), "Recover-Datei")?;
     if recover::is_sealed(&bytes) {
@@ -278,7 +293,7 @@ pub async fn recover_file(st: State<'_, Shared>, path: String, key_path: String,
 
 // --- Pseudonym-Speicher -----------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn store_info(st: State<'_, Shared>) -> StoreInfo {
     let p = store::store_path(&st.config_dir);
     let s = store::load_store(&st.config_dir).unwrap_or_default();
@@ -288,20 +303,21 @@ pub fn store_info(st: State<'_, Shared>) -> StoreInfo {
 #[tauri::command]
 pub fn store_clear(st: State<'_, Shared>) -> Result<(), String> {
     let p = store::store_path(&st.config_dir);
-    if p.exists() {
-        std::fs::remove_file(&p).map_err(|e| e.to_string())?;
+    match std::fs::remove_file(&p) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Löschen fehlgeschlagen: {}", io_text(&e))),
     }
-    Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn store_export(st: State<'_, Shared>, path: String) -> Result<(), String> {
     let s = store::load_store(&st.config_dir).unwrap_or_default();
     let json = serde_json::to_string_pretty(&s).map_err(|e| e.to_string())?;
     store::write_atomic(Path::new(&path), json.as_bytes())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn store_import(st: State<'_, Shared>, path: String) -> Result<StoreInfo, String> {
     let bytes = read_small(Path::new(&path), "Schlüsseldatei")?;
     let s: anonym_core::Store = serde_json::from_slice(&bytes).map_err(|e| format!("Keine gültige Schlüsseldatei: {e}"))?;

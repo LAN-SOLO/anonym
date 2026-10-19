@@ -103,6 +103,15 @@ export interface Decision {
   /** Position + Text der Fundstelle: das Backend ordnet die Entscheidung darüber zu, nicht über die id. */
   bstart?: number;
   text?: string;
+  /** Nur UI: vom Backend berechneter Ersatz nach Kategoriewechsel (nie gesendet). */
+  preview?: string;
+}
+
+export interface ReplacementPreview {
+  bstart: number;
+  text: string;
+  category: Category;
+  replacement: string;
 }
 
 export interface Analysis {
@@ -241,6 +250,7 @@ export const api = {
 
   // Analyse & Anwendung
   analyzeFile: (path: string, rules: Rules) => call<Analysis>('analyze_file', { path, rules }),
+  previewReplacements: (path: string, rules: Rules, decisions: Decision[]) => call<ReplacementPreview[]>('preview_replacements', { path, rules, decisions }),
   suggestOutput: (path: string, ext?: string) => call<string>('suggest_output', { path, ext: ext ?? null }),
   exportTargets: () => call<ExportTarget[]>('export_targets'),
   applyFile: (path: string, rules: Rules, decisions: Decision[], output: string, password?: string) =>

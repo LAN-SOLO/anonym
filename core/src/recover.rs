@@ -145,11 +145,13 @@ pub fn seal(file: &RecoverFile, password: Option<&str>) -> Result<Vec<u8>, Strin
 
 /// Ist die Datei verschlüsselt?
 pub fn is_sealed(bytes: &[u8]) -> bool {
+    let bytes = crate::formats::text::strip_bom(bytes);
     serde_json::from_slice::<Sealed>(bytes).map(|s| s.encrypted).unwrap_or(false)
 }
 
 /// Recover-Datei lesen (Klartext oder mit Passwort entschlüsseln).
 pub fn open(bytes: &[u8], password: Option<&str>) -> Result<RecoverFile, String> {
+    let bytes = crate::formats::text::strip_bom(bytes);
     if let Ok(sealed) = serde_json::from_slice::<Sealed>(bytes) {
         if sealed.encrypted {
             let pw = password.filter(|p| !p.is_empty()).ok_or("PASSWORD_REQUIRED")?;
@@ -335,6 +337,11 @@ mod tests {
         assert_eq!(open(&enc, Some("falsch")).unwrap_err(), "PASSWORD_WRONG");
         assert_eq!(open(&enc, Some("geheim")).unwrap(), k);
         assert!(!String::from_utf8_lossy(&enc).contains("Anna"));
+        // Mit dem Windows-Editor gespeichert: UTF-8-BOM vorn
+        let with_bom = |b: &[u8]| [&[0xEF, 0xBB, 0xBF][..], b].concat();
+        assert_eq!(open(&with_bom(&plain), None).unwrap(), k);
+        assert!(is_sealed(&with_bom(&enc)));
+        assert_eq!(open(&with_bom(&enc), Some("geheim")).unwrap(), k);
         // Zwei Versiegelungen: verschiedene Salze und Nonces
         let enc2 = seal(&k, Some("geheim")).unwrap();
         assert_ne!(enc, enc2);

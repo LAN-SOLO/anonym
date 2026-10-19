@@ -42,6 +42,7 @@ fn main() {
             commands::list_worlds,
             commands::analyze_file,
             commands::apply_file,
+            commands::preview_replacements,
             commands::suggest_output,
             commands::export_targets,
             commands::recover_info,

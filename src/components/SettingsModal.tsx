@@ -3,7 +3,11 @@ import { open, save } from '@tauri-apps/plugin-dialog';
 import { FALLBACK_ENCODINGS, Settings, StoreInfo, UpdateInfo, api } from '../api';
 import { Dict } from '../i18n';
 import { IconExternalLink } from '../icons';
+import { getVersion } from '@tauri-apps/api/app';
+import { errorText } from '../errors';
+import { modKey } from '../platform';
 
+/** Rückfall, falls die Version nicht aus der App kommt (Browser-Vorschau). */
 export const APP_VERSION = '1.0.0';
 
 type SetTab = 'general' | 'files' | 'store' | 'app';
@@ -39,8 +43,11 @@ export function SettingsModal({
   const [installing, setInstalling] = useState(false);
   const [dataPath, setDataPath] = useState('');
   const [store, setStore] = useState<StoreInfo | null>(null);
+  const [version, setVersion] = useState(APP_VERSION);
+  const [updError, setUpdError] = useState('');
 
   useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
     api.dataPath().then(setDataPath).catch(() => {});
     api.storeInfo().then(setStore).catch(() => {});
   }, []);
@@ -68,7 +75,10 @@ export function SettingsModal({
           setUpdState('idle');
         } else setUpdState('none');
       })
-      .catch(() => setUpdState('error'));
+      .catch((e) => {
+        setUpdError(errorText(s.language, e));
+        setUpdState('error');
+      });
   };
 
   const clearStore = async () => {
@@ -82,7 +92,7 @@ export function SettingsModal({
       .catch(onFail);
   };
   const exportStore = async () => {
-    const sel = await save({ defaultPath: 'anonym-schluessel.json', filters: [{ name: 'JSON', extensions: ['json'] }] });
+    const sel = await save({ defaultPath: t.keyFileDefault, filters: [{ name: 'JSON', extensions: ['json'] }] });
     if (!sel) return;
     api.storeExport(sel).then(() => onToast(t.saved)).catch(onFail);
   };
@@ -253,13 +263,17 @@ export function SettingsModal({
           <>
             <div className="updatebox">
               <span>
-                anonym {t.version} {APP_VERSION}
+                anonym {t.version} {version}
               </span>
               <button onClick={checkUpdates} disabled={updState === 'checking'}>
                 {updState === 'checking' ? t.checking : t.checkUpdates}
               </button>
               {updState === 'none' && <span className="dim">{t.noUpdate}</span>}
-              {updState === 'error' && <span className="dim">{t.updateError}</span>}
+              {updState === 'error' && (
+                <span className="dim" title={updError}>
+                  {t.updateError}
+                </span>
+              )}
               {update && (
                 <>
                   <span>
@@ -270,7 +284,10 @@ export function SettingsModal({
                     disabled={installing}
                     onClick={() => {
                       setInstalling(true);
-                      api.installUpdate().catch(() => setInstalling(false));
+                      api.installUpdate().catch((e) => {
+                        setInstalling(false);
+                        onFail(e);
+                      });
                     }}
                   >
                     {installing ? t.updateInstalling : t.installUpdate}
@@ -295,7 +312,7 @@ export function SettingsModal({
               </button>
             </div>
             <div className="note">{t.licenseNote}</div>
-            <div className="note">{t.shortcuts}</div>
+            <div className="note">{t.shortcuts(modKey(s.language))}</div>
           </>
         )}
 

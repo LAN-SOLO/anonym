@@ -3,6 +3,8 @@ import { open, save } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { Decision, ExportTarget, FILE_EXTENSIONS, Rules, Settings, UpdateInfo, api, defaultSettings } from './api';
 import { dicts, Lang, noteText } from './i18n';
+import { errorText } from './errors';
+import { initialLang } from './platform';
 import { Findings } from './components/Findings';
 import { Help } from './components/Help';
 import { Preview } from './components/Preview';
@@ -112,16 +114,23 @@ export default function App() {
   const filesRef = useRef<FileEntry[]>([]);
   filesRef.current = files;
 
-  const lang: Lang = settings?.language ?? 'de';
+  const lang: Lang = settings?.language ?? initialLang(navigator.language);
   const t = dicts[lang];
   const masked = settings?.masked ?? false;
+  const langRef = useRef<Lang>(lang);
+  langRef.current = lang;
+  /** Ersatz für Fundstellen mit umgestellter Kategorie, je Datei: Schlüssel (Position + Text) → Ersatz. */
+  const [catPreview, setCatPreview] = useState<Record<string, Record<string, string>>>({});
+  /** Laufende Analyse je Datei: nur das Ergebnis der jüngsten wird übernommen. */
+  const analyzeSeq = useRef<Record<string, number>>({});
 
   const showToast = useCallback((msg: string, isError = false) => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), isError ? 6000 : 2400);
   }, []);
-  const fail = useCallback((e: unknown) => showToast(String(e), true), [showToast]);
+  // Fehler aus dem Kern sind deutsch formuliert: in die Sprache der Oberfläche übersetzen
+  const fail = useCallback((e: unknown) => showToast(errorText(langRef.current, e), true), [showToast]);
 
   // Bestätigung als Promise: 'ok' | 'alt' (dritte Schaltfläche) | 'cancel'
   type Answer = 'ok' | 'alt' | 'cancel';
@@ -161,9 +170,14 @@ export default function App() {
   const analyze = useCallback(
     (path: string, r: Rules) => {
       setFiles((fs) => fs.map((f) => (f.path === path ? { ...f, status: 'analyzing', error: undefined } : f)));
+      const seq = (analyzeSeq.current[path] ?? 0) + 1;
+      analyzeSeq.current[path] = seq;
+      const stale = () => analyzeSeq.current[path] !== seq;
       api
         .analyzeFile(path, r)
         .then((a) => {
+          // Eine spätere Analyse (geändertes Regelwerk) läuft schon: dieses Ergebnis ist veraltet
+          if (stale()) return;
           // Fundstellen werden nach jeder Analyse neu durchnummeriert (neue Ausnahme, neues
           // Muster …): Entscheidungen über Position + Text der Fundstelle auf die neuen ids
           // übertragen, nicht über die id — sonst träfe ein „Ablehnen“ plötzlich eine andere Stelle.
@@ -180,7 +194,10 @@ export default function App() {
             return { ...d, [path]: next };
           });
         })
-        .catch((e) => setFiles((fs) => fs.map((f) => (f.path === path ? { ...f, status: 'error', error: String(e) } : f))));
+        .catch((e) => {
+          if (stale()) return;
+          setFiles((fs) => fs.map((f) => (f.path === path ? { ...f, status: 'error', error: errorText('de', e) } : f)));
+        });
     },
     []
   );
@@ -229,12 +246,15 @@ export default function App() {
             setUpdateAvail(u);
             if (s.autoUpdate) {
               setInstalling(true);
-              api.installUpdate().catch(() => setInstalling(false));
+              api.installUpdate().catch((e) => {
+                setInstalling(false);
+                fail(e);
+              });
             }
           })
           .catch(() => {});
       })
-      .catch(() => setSettings({ ...defaultSettings }));
+      .catch(() => setSettings({ ...defaultSettings, language: initialLang(navigator.language) }));
     api.getRules().then(setRules).catch(fail);
     api.exportTargets().then(setTargets).catch(() => {});
   }, [fail]);
@@ -333,6 +353,41 @@ export default function App() {
     decide(path, [id], { accept: !e.accept });
   };
 
+  // Kategoriewechsel: den neuen Ersatz vom Backend rechnen lassen (gleicher Weg wie beim
+  // Speichern), damit Tabelle und Vorschau schon vorher zeigen, was geschrieben wird
+  const previewTimer = useRef<number | undefined>(undefined);
+  const previewSeq = useRef(0);
+  useEffect(() => {
+    if (!rules) return;
+    window.clearTimeout(previewTimer.current);
+    previewTimer.current = window.setTimeout(() => {
+      const seq = ++previewSeq.current;
+      for (const f of filesRef.current) {
+        if (!f.analysis) continue;
+        const ds = Object.values(decisions[f.path] ?? {});
+        if (!ds.some((d) => d.category && d.accept && d.replacement == null)) {
+          setCatPreview((p) => {
+            if (!(f.path in p)) return p;
+            const { [f.path]: _drop, ...rest } = p;
+            return rest;
+          });
+          continue;
+        }
+        const list = ds.map(({ key: _key, preview: _preview, ...d }) => d);
+        api
+          .previewReplacements(f.path, rules, list)
+          .then((res) => {
+            if (seq !== previewSeq.current) return;
+            const m: Record<string, string> = {};
+            for (const r of res) m[`${keyOf(r)}\u0000${r.category}`] = r.replacement;
+            setCatPreview((p) => ({ ...p, [f.path]: m }));
+          })
+          .catch(() => {});
+      }
+    }, 150);
+    return () => window.clearTimeout(previewTimer.current);
+  }, [decisions, rules, files]);
+
   // --- Speichern ---------------------------------------------------------------
   /** Speichern: im Ursprungsformat (ext = undefined), als Export (ext) oder per Dialog (chooseTarget). */
   const applyOne = useCallback(
@@ -365,7 +420,7 @@ export default function App() {
       }
       // `key` ist nur für die Oberfläche; bstart + text gehen mit, damit das Backend die
       // Entscheidung auch dann richtig zuordnet, wenn eine neue Analyse noch läuft (ids veraltet)
-      const list = Object.values(decisions[entry.path] ?? {}).map(({ key: _key, ...d }) => d);
+      const list = Object.values(decisions[entry.path] ?? {}).map(({ key: _key, preview: _preview, ...d }) => d);
       // Verschlüsselte Recover-Datei: Passwort einmal je Sitzung erfragen
       if (settings.writeRecover && settings.encryptRecover && !sessionPw.current) {
         const pw = await askText(t.setPassword, t.passwordPrompt, true);
@@ -406,6 +461,8 @@ export default function App() {
     setBusy(true);
     let n = 0;
     for (const f of files) {
+      // Während des Speicherns aus der Liste entfernt: nicht mehr schreiben
+      if (!filesRef.current.some((x) => x.path === f.path)) continue;
       if (f.status === 'ready' || f.status === 'done') {
         if (await applyOne(f, false)) n++;
         // Passwortabfrage abgebrochen: nicht für jede weitere Datei erneut fragen
@@ -498,7 +555,14 @@ export default function App() {
 
   const current = selected ? files.find((f) => f.path === selected) ?? null : null;
   const analysis = current?.analysis;
-  const curDecisions = current ? decisions[current.path] ?? {} : {};
+  const curDecisions: Record<number, Decision> = {};
+  if (current) {
+    const pv = catPreview[current.path] ?? {};
+    for (const [id, d] of Object.entries(decisions[current.path] ?? {})) {
+      const r = d.category && d.key ? pv[`${d.key}\u0000${d.category}`] : undefined;
+      curDecisions[Number(id)] = r === undefined ? d : { ...d, preview: r };
+    }
+  }
   const accepted = analysis ? analysis.findings.filter((f) => effective(f, curDecisions[f.id]).accept).length : 0;
 
   const tabs: [Tab, string][] = [
@@ -570,7 +634,7 @@ export default function App() {
                       </>
                     )}
                     {current.status === 'analyzing' && <span className="sub">{t.stAnalyzing}</span>}
-                    {current.status === 'error' && <span className="chip mini bad">{current.error}</span>}
+                    {current.status === 'error' && <span className="chip mini bad">{errorText(lang, current.error)}</span>}
                   </>
                 ) : (
                   <h1>{t.tabRules}</h1>
@@ -604,7 +668,7 @@ export default function App() {
                   </>
                 )}
                 {tab === 'preview' && analysis && current && <Preview text={analysis.text} findings={analysis.findings} decisions={curDecisions} t={t} onToggle={(id) => toggle(current.path, id)} />}
-                {tab === 'rules' && <RulesView rules={rules} masked={masked} t={t} onChange={changeRules} onToast={showToast} onFail={fail} />}
+                {tab === 'rules' && <RulesView rules={rules} masked={masked} t={t} onChange={changeRules} onConfirm={onConfirm} onToast={showToast} onFail={fail} />}
                 {tab === 'report' && <ReportView result={current?.result} outputs={current?.outputs ?? []} t={t} lang={lang} onOpen={(p) => api.openPath(p).catch(fail)} />}
                 {(tab === 'findings' || tab === 'preview') && current && !analysis && current.status !== 'error' && <div className="empty">{t.stAnalyzing}</div>}
               </div>
@@ -675,6 +739,7 @@ export default function App() {
           targets={targets}
           sessionPassword={sessionPw.current}
           t={t}
+          lang={lang}
           onClose={() => setShowRecover(false)}
           onDone={() => {}}
           onFail={fail}
@@ -693,7 +758,10 @@ export default function App() {
             disabled={installing}
             onClick={() => {
               setInstalling(true);
-              api.installUpdate().catch(() => setInstalling(false));
+              api.installUpdate().catch((e) => {
+                setInstalling(false);
+                fail(e);
+              });
             }}
           >
             {installing ? t.updateInstalling : t.updateInstall}

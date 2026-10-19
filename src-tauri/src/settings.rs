@@ -77,6 +77,10 @@ impl Settings {
         if !self.write_recover {
             self.encrypt_recover = false;
         }
+        // „C:“ ist unter Windows der aktuelle Ordner auf C:, nicht das Laufwerk — Stamm meinen
+        let dir = self.output_dir.trim();
+        let b = dir.as_bytes();
+        self.output_dir = if b.len() == 2 && b[1] == b':' && b[0].is_ascii_alphabetic() { format!("{dir}\\") } else { dir.to_string() };
         self
     }
 }
@@ -105,10 +109,9 @@ pub fn load(config_dir: &std::path::Path) -> Settings {
         .unwrap_or_default()
 }
 
-pub fn store(config_dir: &std::path::Path, settings: &Settings) {
-    if let Ok(json) = serde_json::to_string_pretty(settings) {
-        let _ = crate::store::write_atomic(&settings_path(config_dir), json.as_bytes());
-    }
+pub fn store(config_dir: &std::path::Path, settings: &Settings) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    crate::store::write_atomic(&settings_path(config_dir), json.as_bytes())
 }
 
 #[cfg(test)]
@@ -124,5 +127,8 @@ mod tests {
         assert_eq!(Settings { output_suffix: "..".into(), ..Settings::default() }.sanitized().output_suffix, ".anonym");
         assert_eq!(Settings { output_suffix: "_anon".into(), ..Settings::default() }.sanitized().output_suffix, "_anon");
         assert_eq!(Settings { output_suffix: "C:\\a|b".into(), ..Settings::default() }.sanitized().output_suffix, "Cab");
+        assert_eq!(Settings { output_dir: " D: ".into(), ..Settings::default() }.sanitized().output_dir, "D:\\");
+        assert_eq!(Settings { output_dir: "D:\\Export".into(), ..Settings::default() }.sanitized().output_dir, "D:\\Export");
+        assert_eq!(Settings { output_dir: "/Users/a b/Ausgabe".into(), ..Settings::default() }.sanitized().output_dir, "/Users/a b/Ausgabe");
     }
 }

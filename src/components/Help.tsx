@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Lang } from '../i18n';
+import { modKey } from '../platform';
 
 // Selbstständiges Hilfe-System: schwebender ?-Button, First-Run-Tutorial
 // und durchsuchbares Handbuch. Inhalte liegen bewusst hier, nicht in i18n.ts.
@@ -73,7 +74,7 @@ const de: Content = {
         '• ✓ nimmt an, ✗ lehnt ab. Über die Kategorie-Chips filtern Sie und nehmen ganze Kategorien auf einmal an oder ab.',
         '• Klick auf den Ersatz macht ihn editierbar — Ihr Text ersetzt den Vorschlag.',
         '• Der Schild-Knopf setzt das Original auf die Ausnahmeliste: Firmenname, Produktname, Behörde — bleibt künftig in allen Dateien stehen.',
-        '• Die Kategorie lässt sich pro Fundstelle umstellen, etwa wenn eine Nummer als Telefon erkannt wurde, aber ein Aktenzeichen ist.',
+        '• Die Kategorie lässt sich pro Fundstelle umstellen, etwa wenn eine Nummer als Telefon erkannt wurde, aber ein Aktenzeichen ist. Der Ersatz für die neue Kategorie erscheint sofort in Tabelle und Vorschau.',
       ],
     },
     {
@@ -178,7 +179,7 @@ const de: Content = {
         '• Damit bleiben Beziehungen zwischen Tabellen intakt: Kundennummer 10482 wird in allen Exporten dieselbe neue Nummer, Anna Berger überall dieselbe Lena Vogt.',
         '• Der Speicher ist zugleich die Schlüsseldatei. Wer sie hat, kann zurückübersetzen — exportieren Sie sie nur an Stellen, die das dürfen.',
         '• Rechtlich gilt: Solange eine Schlüsseldatei existiert, ist das Ergebnis pseudonymisiert, nicht anonymisiert. „Speicher löschen“ macht aus Pseudonymisierung Anonymisierung.',
-        '• Ändern Sie die Saat, passt der Speicher nicht mehr und wird beim nächsten Lauf geleert.',
+        '• Ändern Sie die Saat, passt der Speicher nicht mehr und wird beim nächsten Lauf geleert. „Neu“ fragt vorher, solange der Speicher Einträge hat.',
         '• „Schlüsseldatei laden …“ übernimmt Saat und Namenswelt der Datei ins aktive Regelwerk — sonst würde der geladene Speicher sofort als unpassend verworfen.',
       ],
     },
@@ -213,8 +214,6 @@ const de: Content = {
         '• Nachnamen ohne Vorname oder Anrede werden im Fließtext nicht erkannt — in Tabellenspalten mit passender Kopfzeile schon. Helfen Sie mit eigenen Wortlisten nach.',
         '• Ein Vorname, der auch ein Wort ist („Mai“, „August“ als Monat), wird nur mit Nachname oder Anrede gezählt.',
         '• Excel-Zahlenzellen ohne typisierte Kopfzeile, Blattnamen, Kopf-/Fußzeilen von Excel-Blättern, Bilder, eingebettete Objekte und benutzerdefinierte Dokument-Eigenschaften (docProps/custom.xml) werden nicht geprüft.',
-        '• Wechseln Sie die Kategorie einer Fundstelle, berechnet anonym den neuen Ersatz beim Speichern; Tabelle und Vorschau zeigen bis dahin den alten Vorschlag.',
-        '• Fehlermeldungen aus dem Kern (z. B. „Datei nicht lesbar“) erscheinen auf Deutsch, auch wenn die Oberfläche englisch ist.',
         '• Freitext hinter Namen („Anna Möbelhaus“) kann fälschlich als Nachname gelten — die Quelle „Kontext“ mit Konfidenz 65 % markiert solche Fälle; ein Klick lehnt ab.',
       ],
     },
@@ -227,13 +226,17 @@ const de: Content = {
         '• Entscheidungen (angenommen, abgelehnt, eigener Ersatz) bleiben an der richtigen Fundstelle, wenn eine neue Analyse die Liste verändert (z. B. nach einer Ausnahme).',
         '• Passwort für Recover-Dateien wird zweimal abgefragt; ohne Passwort wird nichts geschrieben.',
         '• Ausgabe, Bericht und Recover-Datei können die Quelle nicht überschreiben — auch nicht über Groß-/Kleinschreibung, Symlinks oder „..“.',
-        '• Hinweise zur Datei erscheinen in der Sprache der Oberfläche.',
+        '• Hinweise zur Datei und Fehlermeldungen erscheinen in der Sprache der Oberfläche.',
+        '• Kategorie einer Fundstelle umgestellt: Tabelle und Vorschau zeigen sofort den neuen Ersatz — genau den, der beim Speichern geschrieben wird.',
+        '• Sicherheitsabfragen vor „Auf Standard zurücksetzen“, vor einer neuen Saat bei gefülltem Pseudonym-Speicher und vor dem Entfernen eigener Muster und Wortlisten.',
+        '• Windows: CSV/TSV-Exporte tragen ein UTF-8-BOM (Excel zeigt Umlaute richtig); Regelwerke, Schlüssel- und Recover-Dateien aus dem Windows-Editor (mit BOM) werden gelesen. Kurz gesperrte Dateien (Virenscanner, OneDrive) werden beim Speichern einige Male neu versucht.',
+        '• Update-Fehler werden angezeigt statt still verworfen.',
       ],
     },
     {
       id: 'shortcuts',
       title: 'Tastatur',
-      body: ['• O — Datei öffnen', '• S — Anonymisiert speichern', '• R — Wiederherstellen', '• 1, 2, 3, 4 — Reiter Fundstellen, Vorschau, Regelwerk, Bericht', '• ? — Handbuch', '• ⌘/Strg + , — Einstellungen', '• Esc — Dialog schließen'],
+      body: ['• O — Datei öffnen', '• S — Anonymisiert speichern', '• R — Wiederherstellen', '• 1, 2, 3, 4 — Reiter Fundstellen, Vorschau, Regelwerk, Bericht', '• ? — Handbuch', `• ${modKey('de')} + , — Einstellungen`, '• Esc — Dialog schließen'],
     },
   ],
 };
@@ -277,7 +280,7 @@ const en: Content = {
         '• ✓ accepts, ✗ rejects. The category chips filter the list and accept or reject whole categories at once.',
         '• Click the replacement to edit it — your text replaces the suggestion.',
         '• The shield button puts the original on the allowlist: company name, product, authority — stays untouched in every file from now on.',
-        '• The category can be changed per finding, e.g. when a number was detected as a phone but is a case number.',
+        '• The category can be changed per finding, e.g. when a number was detected as a phone but is a case number. The replacement for the new category appears right away in table and preview.',
       ],
     },
     {
@@ -382,7 +385,7 @@ const en: Content = {
         '• That keeps relations between tables intact: customer 10482 becomes the same new number in every export, Anna Berger is Lena Vogt everywhere.',
         '• The store doubles as the key file. Whoever has it can translate back — export it only to places that are allowed to.',
         '• Legally, as long as a key file exists the result is pseudonymised, not anonymised. “Clear store” turns pseudonymisation into anonymisation.',
-        '• If you change the seed, the store no longer fits and is emptied on the next run.',
+        '• If you change the seed, the store no longer fits and is emptied on the next run. “New” asks first while the store has entries.',
         '• “Load key file …” copies the file’s seed and name world into the active rule set — otherwise the loaded store would be discarded right away as not matching.',
       ],
     },
@@ -417,8 +420,6 @@ const en: Content = {
         '• Surnames without a first name or salutation are not detected in running text — in table columns with a matching header they are. Help with custom word lists.',
         '• A first name that is also a word (“May”, “August” as months) only counts with a surname or salutation.',
         '• Excel numeric cells without a typed header, sheet names, headers/footers of Excel sheets, images, embedded objects and custom document properties (docProps/custom.xml) are not checked.',
-        '• If you change a finding’s category, anonym computes the new replacement when saving; table and preview show the old suggestion until then.',
-        '• Error messages from the core (e.g. “Datei nicht lesbar”) appear in German even when the interface is English.',
         '• Free text after a name (“Anna Furniture”) can be mistaken for a surname — the source “context” with 65 % confidence marks such cases; one click rejects.',
       ],
     },
@@ -431,13 +432,17 @@ const en: Content = {
         '• Decisions (accepted, rejected, own replacement) stay on the right finding when a new analysis changes the list (e.g. after adding an allowlist entry).',
         '• The recover-file password is asked twice; without a password nothing is written.',
         '• Output, report and recover file cannot overwrite the source — not via case, symlinks or “..” either.',
-        '• File notes appear in the interface language.',
+        '• File notes and error messages appear in the interface language.',
+        '• Changed a finding’s category: table and preview show the new replacement right away — exactly the one that is written on save.',
+        '• Confirmation before “Reset to defaults”, before a new seed while the pseudonym store has entries and before removing custom patterns and word lists.',
+        '• Windows: CSV/TSV exports carry a UTF-8 BOM (Excel shows umlauts correctly); rule sets, key and recover files saved by Windows Notepad (with BOM) are read. Briefly locked files (virus scanner, OneDrive) are retried a few times when saving.',
+        '• Update errors are shown instead of being dropped silently.',
       ],
     },
     {
       id: 'shortcuts',
       title: 'Keyboard',
-      body: ['• O — open file', '• S — save anonymised', '• R — recover', '• 1, 2, 3, 4 — tabs Findings, Preview, Rules, Report', '• ? — manual', '• ⌘/Ctrl + , — settings', '• Esc — close dialog'],
+      body: ['• O — open file', '• S — save anonymised', '• R — recover', '• 1, 2, 3, 4 — tabs Findings, Preview, Rules, Report', '• ? — manual', `• ${modKey('en')} + , — settings`, '• Esc — close dialog'],
     },
   ],
 };

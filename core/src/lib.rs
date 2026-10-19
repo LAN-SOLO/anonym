@@ -140,6 +140,57 @@ pub fn analyze(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Options)
     })
 }
 
+/// Entscheidungen auf die Fundstellen anwenden: je Fundstelle `None` (abgelehnt) oder die
+/// wirksame Kategorie mit Ersatz. Gemeinsam für Speichern und Vorschau, damit die Vorschau
+/// eines Kategoriewechsels genau den Ersatz zeigt, der später geschrieben wird (der
+/// Pseudonymisierer zählt mit — die Reihenfolge muss dieselbe sein).
+fn resolve(p: &mut Prepared, rules: &Rules, dicts: &Dictionaries, decisions: &[Decision]) -> Vec<Option<(Category, String)>> {
+    // Entscheidungen mit Position + Text darüber zuordnen, ältere/ohne Schlüssel über die id
+    let by_key: HashMap<(usize, &str), &Decision> = decisions.iter().filter_map(|d| Some(((d.bstart?, d.text.as_deref()?), d))).collect();
+    let by_id: HashMap<u32, &Decision> = decisions.iter().filter(|d| d.bstart.is_none() || d.text.is_none()).map(|d| (d.id, d)).collect();
+    let mut out = Vec::with_capacity(p.findings.len());
+    for f in &p.findings {
+        let d = by_key.get(&(f.bstart, f.text.as_str())).or_else(|| by_id.get(&f.id));
+        if d.map(|d| !d.accept).unwrap_or(false) {
+            out.push(None);
+            continue;
+        }
+        let category = d.and_then(|d| d.category).unwrap_or(f.category);
+        let replacement = match d.and_then(|d| d.replacement.clone()) {
+            Some(r) => r,
+            None if category != f.category => apply::replacement(&f.text, category, &[], &[], &rules.rule(category), &mut p.pseudo, dicts),
+            None => f.replacement.clone(),
+        };
+        out.push(Some((category, replacement)));
+    }
+    out
+}
+
+/// Ersatz einer Fundstelle, deren Kategorie in der Oberfläche umgestellt wurde.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplacementPreview {
+    pub bstart: usize,
+    pub text: String,
+    pub category: Category,
+    pub replacement: String,
+}
+
+/// Vorschau für Kategoriewechsel: wie `apply_file`, schreibt aber nichts und liefert nur die
+/// angenommenen Fundstellen, deren Kategorie per Entscheidung geändert ist.
+pub fn preview_replacements(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Options, decisions: &[Decision]) -> Result<Vec<ReplacementPreview>, String> {
+    let mut p = prepare(path, rules, dicts, opts)?;
+    let resolved = resolve(&mut p, rules, dicts, decisions);
+    Ok(p.findings
+        .iter()
+        .zip(resolved)
+        .filter_map(|(f, r)| {
+            let (category, replacement) = r?;
+            (category != f.category).then(|| ReplacementPreview { bstart: f.bstart, text: f.text.clone(), category, replacement })
+        })
+        .collect())
+}
+
 /// Ergebnis einer Anwendung: Bericht + aktualisierter Pseudonym-Speicher.
 pub struct Applied {
     pub report: Report,
@@ -173,26 +224,15 @@ pub fn suggest_output_as(path: &Path, out_dir: Option<&Path>, suffix: &str, targ
 /// anwenden, im Ursprungsformat schreiben, Bericht erzeugen.
 pub fn apply_file(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Options, decisions: &[Decision], output: &Path) -> Result<Applied, String> {
     let mut p = prepare(path, rules, dicts, opts)?;
-    // Entscheidungen mit Position + Text darüber zuordnen, ältere/ohne Schlüssel über die id
-    let by_key: HashMap<(usize, &str), &Decision> = decisions.iter().filter_map(|d| Some(((d.bstart?, d.text.as_deref()?), d))).collect();
-    let by_id: HashMap<u32, &Decision> = decisions.iter().filter(|d| d.bstart.is_none() || d.text.is_none()).map(|d| (d.id, d)).collect();
+    let resolved = resolve(&mut p, rules, dicts, decisions);
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let mut entries: HashMap<(Category, String), (String, u32)> = HashMap::new();
     let mut by_category: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
     let mut rejected = 0u32;
-    for f in &p.findings {
-        let d = by_key.get(&(f.bstart, f.text.as_str())).or_else(|| by_id.get(&f.id));
-        if let Some(d) = d {
-            if !d.accept {
-                rejected += 1;
-                continue;
-            }
-        }
-        let category = d.and_then(|d| d.category).unwrap_or(f.category);
-        let replacement = match d.and_then(|d| d.replacement.clone()) {
-            Some(r) => r,
-            None if category != f.category => apply::replacement(&f.text, category, &[], &[], &rules.rule(category), &mut p.pseudo, dicts),
-            None => f.replacement.clone(),
+    for (f, r) in p.findings.iter().zip(resolved) {
+        let Some((category, replacement)) = r else {
+            rejected += 1;
+            continue;
         };
         *by_category.entry(category.key().to_string()).or_insert(0) += 1;
         entries.entry((category, f.text.clone())).and_modify(|e| e.1 += 1).or_insert((replacement.clone(), 1));
@@ -415,6 +455,38 @@ mod tests {
             assert!(!std::fs::read(&out).unwrap().is_empty());
         }
         assert_eq!(std::fs::read_to_string(suggest_recovered(&xlsx_out, Some("csv"))).unwrap().lines().nth(1).unwrap(), "10482;Anna Berger;anna@example.org");
+    }
+
+    #[test]
+    fn category_change_preview_matches_output() {
+        let path = tmp("katwechsel.txt", "Rückruf unter 0221 4711-0 und 0221 4711-1 erbeten.\n".as_bytes());
+        let (dicts, rules, opts) = (Dictionaries::builtin(), Rules::default(), Options::default());
+        let a = analyze(&path, &rules, &dicts, &opts).unwrap();
+        let phones: Vec<_> = a.findings.iter().filter(|f| f.category == Category::Phone).collect();
+        assert_eq!(phones.len(), 2, "{:?}", a.findings);
+        let mut rules = rules;
+        rules.categories.get_mut(&Category::CustomerId).unwrap().strategy = Strategy::Placeholder;
+        let decisions: Vec<Decision> = phones
+            .iter()
+            .map(|f| Decision { id: f.id, category: Some(Category::CustomerId), bstart: Some(f.bstart), text: Some(f.text.clone()), ..Decision::default() })
+            .collect();
+        let prev = preview_replacements(&path, &rules, &dicts, &opts, &decisions).unwrap();
+        assert_eq!(prev.len(), 2);
+        assert!(prev.iter().all(|p| p.category == Category::CustomerId));
+        assert_ne!(prev[0].replacement, phones[0].replacement);
+        let out = suggest_output(&path, None, "");
+        apply_file(&path, &rules, &dicts, &opts, &decisions, &out).unwrap();
+        let result = std::fs::read_to_string(&out).unwrap();
+        for p in &prev {
+            assert!(result.contains(&p.replacement), "{result} / {}", p.replacement);
+        }
+        // Abgelehnte Fundstellen erscheinen nicht, ein eigener Ersatz hat Vorrang
+        let mut d2 = decisions.clone();
+        d2[0].accept = false;
+        d2[1].replacement = Some("X".into());
+        let p2 = preview_replacements(&path, &rules, &dicts, &opts, &d2).unwrap();
+        assert_eq!(p2.len(), 1);
+        assert_eq!(p2[0].replacement, "X");
     }
 
     #[test]

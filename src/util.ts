@@ -47,7 +47,8 @@ export function effective(f: Finding, d: Decision | undefined): { accept: boolea
   return {
     accept: d ? d.accept : true,
     category: d?.category ?? f.category,
-    replacement: d?.replacement ?? f.replacement,
+    // Eigener Ersatz vor dem Backend-Vorschlag für die neue Kategorie vor dem ursprünglichen
+    replacement: d?.replacement ?? (d?.category ? d.preview : undefined) ?? f.replacement,
   };
 }
 

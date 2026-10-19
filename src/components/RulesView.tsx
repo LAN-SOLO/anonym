@@ -12,6 +12,7 @@ export function RulesView({
   masked,
   t,
   onChange,
+  onConfirm,
   onToast,
   onFail,
 }: {
@@ -19,6 +20,7 @@ export function RulesView({
   masked: boolean;
   t: Dict;
   onChange: (r: Rules) => void;
+  onConfirm: (text: string, ok?: string) => Promise<boolean>;
   onToast: (msg: string) => void;
   onFail: (e: unknown) => void;
 }) {
@@ -49,14 +51,15 @@ export function RulesView({
       .catch(onFail);
   };
   const exportRules = async () => {
-    const sel = await save({ defaultPath: `${rules.name || 'regelwerk'}.anonym-rules.json`, filters: [{ name: t.rulesFile, extensions: ['json'] }] });
+    const sel = await save({ defaultPath: `${rules.name || t.rulesDefaultFile}.anonym-rules.json`, filters: [{ name: t.rulesFile, extensions: ['json'] }] });
     if (!sel) return;
     api
       .exportRules(rules, sel)
       .then(() => onToast(t.rulesExported))
       .catch(onFail);
   };
-  const reset = () =>
+  const reset = async () => {
+    if (!(await onConfirm(t.rulesResetConfirm, t.rulesReset))) return;
     api
       .defaultRules()
       .then((r) => {
@@ -64,6 +67,26 @@ export function RulesView({
         setAllow('');
       })
       .catch(onFail);
+  };
+  // Neue Saat = neue Pseudonyme; ein gefüllter Pseudonym-Speicher passt danach nicht mehr
+  const newSeed = async () => {
+    const info = await api.storeInfo().catch(() => null);
+    if (info && info.entries > 0 && !(await onConfirm(t.rulesNewSeedConfirm(info.entries), t.rulesNewSeed))) return;
+    api
+      .newSeed()
+      .then((seed) => patch({ seed }))
+      .catch(onFail);
+  };
+  const removePattern = async (i: number) => {
+    const p = rules.customPatterns[i];
+    if ((p.name || p.pattern) && !(await onConfirm(t.removeEntryConfirm(p.name || p.pattern), t.remove))) return;
+    patch({ customPatterns: rules.customPatterns.filter((_, j) => j !== i) });
+  };
+  const removeWords = async (i: number) => {
+    const w = rules.customWords[i];
+    if ((w.name || w.words.length) && !(await onConfirm(t.removeEntryConfirm(w.name || w.words[0]), t.remove))) return;
+    patch({ customWords: rules.customWords.filter((_, j) => j !== i) });
+  };
 
   return (
     <div className="rules">
@@ -76,7 +99,7 @@ export function RulesView({
           <span>{t.rulesSeed}</span>
           <div className="pickrow" style={{ margin: 0 }}>
             <input type="text" value={rules.seed} spellCheck={false} onChange={(e) => patch({ seed: e.target.value })} />
-            <button title={t.rulesNewSeedHint} onClick={() => api.newSeed().then((seed) => patch({ seed })).catch(onFail)}>
+            <button title={t.rulesNewSeedHint} onClick={newSeed}>
               {t.rulesNewSeed}
             </button>
           </div>
@@ -143,25 +166,28 @@ export function RulesView({
                   </select>
                 </td>
                 <td className="tuning">
-                  {r.strategy === 'redact' && (
-                    <>
-                      <input type="text" className="ch" maxLength={1} value={r.redactChar} disabled={!masked} title={t.redactChar} onChange={(e) => patchCat(c, { redactChar: e.target.value || '█' })} />
-                      <label className="check" style={{ margin: 0 }}>
-                        <input type="checkbox" checked={r.keepLength} disabled={!masked} onChange={(e) => patchCat(c, { keepLength: e.target.checked })} />
-                        {t.keepLength}
-                      </label>
-                    </>
-                  )}
-                  {r.strategy === 'mask' && (
-                    <>
-                      <input type="text" className="ch" maxLength={1} value={r.maskChar} disabled={!masked} title={t.maskChar} onChange={(e) => patchCat(c, { maskChar: e.target.value || 'X' })} />
-                      <span className="dim">{t.keepLast}</span>
-                      <input type="number" className="n" min={0} max={20} value={r.keepLast} disabled={!masked} onChange={(e) => patchCat(c, { keepLast: Math.max(0, Number(e.target.value) || 0) })} />
-                    </>
-                  )}
-                  {r.strategy === 'placeholder' && (
-                    <input type="text" className="tpl" value={r.placeholder} disabled={!masked} title={t.placeholderTplHint} onChange={(e) => patchCat(c, { placeholder: e.target.value })} />
-                  )}
+                  {/* Flex nur innen: ein flex-<td> fällt aus dem Tabellenlayout (Zeilenlinien versetzt) */}
+                  <div className="tun">
+                    {r.strategy === 'redact' && (
+                      <>
+                        <input type="text" className="ch" maxLength={1} value={r.redactChar} disabled={!masked} title={t.redactChar} onChange={(e) => patchCat(c, { redactChar: e.target.value || '█' })} />
+                        <label className="check" style={{ margin: 0 }}>
+                          <input type="checkbox" checked={r.keepLength} disabled={!masked} onChange={(e) => patchCat(c, { keepLength: e.target.checked })} />
+                          {t.keepLength}
+                        </label>
+                      </>
+                    )}
+                    {r.strategy === 'mask' && (
+                      <>
+                        <input type="text" className="ch" maxLength={1} value={r.maskChar} disabled={!masked} title={t.maskChar} onChange={(e) => patchCat(c, { maskChar: e.target.value || 'X' })} />
+                        <span className="dim">{t.keepLast}</span>
+                        <input type="number" className="n" min={0} max={20} value={r.keepLast} disabled={!masked} onChange={(e) => patchCat(c, { keepLast: Math.max(0, Number(e.target.value) || 0) })} />
+                      </>
+                    )}
+                    {r.strategy === 'placeholder' && (
+                      <input type="text" className="tpl" value={r.placeholder} disabled={!masked} title={t.placeholderTplHint} onChange={(e) => patchCat(c, { placeholder: e.target.value })} />
+                    )}
+                  </div>
                 </td>
               </tr>
             );
@@ -193,7 +219,7 @@ export function RulesView({
               </option>
             ))}
           </select>
-          <button className="icon ghost" disabled={!masked} onClick={() => patch({ customPatterns: rules.customPatterns.filter((_, j) => j !== i) })}>
+          <button className="icon ghost" disabled={!masked} onClick={() => removePattern(i)}>
             <IconTrash size={11} />
           </button>
         </div>
@@ -219,7 +245,7 @@ export function RulesView({
                 </option>
               ))}
             </select>
-            <button className="icon ghost" disabled={!masked} onClick={() => patch({ customWords: rules.customWords.filter((_, j) => j !== i) })}>
+            <button className="icon ghost" disabled={!masked} onClick={() => removeWords(i)}>
               <IconTrash size={11} />
             </button>
           </div>

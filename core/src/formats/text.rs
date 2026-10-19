@@ -11,6 +11,11 @@ pub struct Encoding {
 
 pub const FALLBACKS: [&str; 6] = ["windows-1252", "iso-8859-15", "windows-1250", "iso-8859-2", "macintosh", "koi8-r"];
 
+/// UTF-8-BOM am Anfang entfernen (Windows-Editor schreibt ihn auch in JSON-Dateien).
+pub fn strip_bom(bytes: &[u8]) -> &[u8] {
+    bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes)
+}
+
 pub fn decode(bytes: &[u8], fallback: &str) -> (String, Encoding) {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         return (String::from_utf8_lossy(&bytes[3..]).into_owned(), Encoding { name: "UTF-8".into(), bom: true, legacy: false });

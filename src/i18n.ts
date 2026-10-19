@@ -189,6 +189,10 @@ const de = {
   rulesImported: 'Regelwerk geladen.',
   rulesExported: 'Regelwerk exportiert.',
   rulesFile: 'Regelwerk (JSON)',
+  rulesDefaultFile: 'regelwerk',
+  rulesResetConfirm: 'Regelwerk auf Standard zurücksetzen? Ausnahmeliste, eigene Muster, Wortlisten und Einstellungen je Kategorie gehen verloren; die Saat wird neu erzeugt (neue Pseudonyme). Exportieren Sie das Regelwerk vorher, wenn Sie es behalten wollen.',
+  rulesNewSeedConfirm: (n: number) => `Neue Saat erzeugen? Der Pseudonym-Speicher (${n} Einträge) hängt an der bisherigen Saat und wird beim nächsten Speichern neu begonnen — bisherige Ersatznamen werden dann nicht weiterverwendet.`,
+  removeEntryConfirm: (name: string) => `„${name}“ entfernen?`,
 
   // Bericht
   reportTitle: 'Bericht',
@@ -259,7 +263,8 @@ const de = {
   website: 'Website',
   github: 'GitHub',
   licenseNote: '// Free bleibt kostenlos. masked: 12 € im Jahr — buchbar zum Start, im Vorabzugang frei.',
-  shortcuts: '// Tastatur: O Datei öffnen · S Speichern · R Wiederherstellen · 1–4 Reiter · ? Hilfe · ⌘/Strg+, Einstellungen',
+  shortcuts: (mod: string) => `// Tastatur: O Datei öffnen · S Speichern · R Wiederherstellen · 1–4 Reiter · ? Hilfe · ${mod}+, Einstellungen`,
+  keyFileDefault: 'anonym-schluessel.json',
   saveSettings: 'Übernehmen',
   dataFolder: 'Datenordner',
 
@@ -499,6 +504,10 @@ const en: Dict = {
   rulesImported: 'Rule set loaded.',
   rulesExported: 'Rule set exported.',
   rulesFile: 'Rule set (JSON)',
+  rulesDefaultFile: 'rules',
+  rulesResetConfirm: 'Reset the rule set to defaults? The allowlist, custom patterns, word lists and per-category settings are lost; a new seed is generated (new pseudonyms). Export the rule set first if you want to keep it.',
+  rulesNewSeedConfirm: (n: number) => `Generate a new seed? The pseudonym store (${n} entries) belongs to the current seed and starts over on the next save — previous substitute names are no longer reused.`,
+  removeEntryConfirm: (name: string) => `Remove “${name}”?`,
 
   reportTitle: 'Report',
   reportNone: 'Nothing saved yet. The report appears after “Save anonymised”.',
@@ -567,7 +576,8 @@ const en: Dict = {
   website: 'Website',
   github: 'GitHub',
   licenseNote: '// Free stays free. masked: €12 per year — bookable at launch, free during early access.',
-  shortcuts: '// Keyboard: O open file · S save · R recover · 1–4 tabs · ? help · ⌘/Ctrl+, settings',
+  shortcuts: (mod: string) => `// Keyboard: O open file · S save · R recover · 1–4 tabs · ? help · ${mod}+, settings`,
+  keyFileDefault: 'anonym-key.json',
   saveSettings: 'Apply',
   dataFolder: 'Data folder',
 

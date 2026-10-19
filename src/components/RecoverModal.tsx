@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { ExportTarget, FILE_EXTENSIONS, RecoverInfo, RecoverResult, api } from '../api';
-import { Dict } from '../i18n';
+import { Dict, Lang } from '../i18n';
+import { errorText } from '../errors';
 import { baseName, dirName } from '../util';
 
 /** Wiederherstellen: bearbeitete anonymisierte Datei + Recover-Datei → Ausgabe in wählbarem Format. */
@@ -9,6 +10,7 @@ export function RecoverModal({
   targets,
   sessionPassword,
   t,
+  lang,
   onClose,
   onDone,
   onFail,
@@ -16,6 +18,7 @@ export function RecoverModal({
   targets: ExportTarget[];
   sessionPassword: string | null;
   t: Dict;
+  lang: Lang;
   onClose: () => void;
   onDone: (r: RecoverResult) => void;
   onFail: (e: unknown) => void;
@@ -34,12 +37,17 @@ export function RecoverModal({
   // Recover-Datei neben der gewählten Datei vorschlagen
   useEffect(() => {
     if (!file || key) return;
+    // Schnell eine andere Datei gewählt: die ältere Vermutung nicht mehr übernehmen
+    let live = true;
     api
       .suggestRecoverKey(file)
       .then(async (guess) => {
-        if (await api.pathExists(guess)) setKey(guess);
+        if (live && (await api.pathExists(guess)) && live) setKey(guess);
       })
       .catch(() => {});
+    return () => {
+      live = false;
+    };
   }, [file, key]);
 
   useEffect(() => {
@@ -47,17 +55,23 @@ export function RecoverModal({
       setInfo(null);
       return;
     }
+    let live = true;
     api
       .recoverInfo(key)
       .then((i) => {
+        if (!live) return;
         setInfo(i);
         setError(null);
       })
       .catch((e) => {
+        if (!live) return;
         setInfo(null);
-        setError(String(e));
+        setError(errorText(lang, e));
       });
-  }, [key]);
+    return () => {
+      live = false;
+    };
+  }, [key, lang]);
 
   const pickFile = async () => {
     const sel = await open({ multiple: false, title: t.recoverPickFile, filters: [{ name: t.allFiles, extensions: FILE_EXTENSIONS }] });
@@ -92,7 +106,7 @@ export function RecoverModal({
       onDone(r);
     } catch (e) {
       const msg = String(e);
-      setError(msg.includes('PASSWORD_WRONG') ? t.recoverPasswordWrong : msg.includes('PASSWORD_REQUIRED') ? t.recoverPassword : msg);
+      setError(msg.includes('PASSWORD_WRONG') ? t.recoverPasswordWrong : msg.includes('PASSWORD_REQUIRED') ? t.recoverPassword : errorText(lang, e));
       if (!msg.includes('PASSWORD')) onFail(e);
     } finally {
       setBusy(false);

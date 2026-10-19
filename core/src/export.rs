@@ -122,7 +122,7 @@ pub fn extract(kind: &Kind, bytes: &[u8], text: &str) -> Result<Content, String>
 }
 
 fn zip_part(bytes: &[u8], name: &str) -> Result<Option<String>, String> {
-    let mut a = ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
+    let mut a = ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("Kein gültiges ZIP-Archiv: {e}"))?;
     let mut f = match a.by_name(name) {
         Ok(f) => f,
         Err(_) => return Ok(None),
@@ -132,7 +132,7 @@ fn zip_part(bytes: &[u8], name: &str) -> Result<Option<String>, String> {
 }
 
 fn zip_names(bytes: &[u8]) -> Result<Vec<String>, String> {
-    let a = ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
+    let a = ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("Kein gültiges ZIP-Archiv: {e}"))?;
     Ok(a.file_names().map(|s| s.to_string()).collect())
 }
 
@@ -267,8 +267,9 @@ pub fn render(content: &Content, target: Target, title: &str) -> Result<Vec<u8>,
         Target::Txt => txt(content).into_bytes(),
         Target::Md => md(content).into_bytes(),
         Target::Html => html(content, title).into_bytes(),
-        Target::Csv => delimited(content, ';').into_bytes(),
-        Target::Tsv => delimited(content, '\t').into_bytes(),
+        // Mit UTF-8-BOM: Excel unter Windows liest CSV sonst als Windows-1252 (Umlaute kaputt)
+        Target::Csv => with_bom(delimited(content, ';')),
+        Target::Tsv => with_bom(delimited(content, '\t')),
         Target::Json => json(content, title)?,
         Target::Xlsx => xlsx(content)?,
         Target::Docx => docx(content)?,
@@ -389,6 +390,13 @@ fn html(content: &Content, title: &str) -> String {
     }
     s.push_str("</body>\n</html>\n");
     s
+}
+
+fn with_bom(s: String) -> Vec<u8> {
+    let mut v = Vec::with_capacity(s.len() + 3);
+    v.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    v.extend_from_slice(s.as_bytes());
+    v
 }
 
 fn delimited(content: &Content, delim: char) -> String {
@@ -843,7 +851,7 @@ mod tests {
             let bytes = render(&text, target, "Test").unwrap();
             assert!(!bytes.is_empty(), "{target:?}");
         }
-        assert!(String::from_utf8(render(&t, Target::Csv, "x").unwrap()).unwrap().starts_with("Kd-Nr;Name;Betrag\r\n10482;"));
+        assert!(String::from_utf8(render(&t, Target::Csv, "x").unwrap()).unwrap().starts_with("\u{feff}Kd-Nr;Name;Betrag\r\n10482;"));
         assert!(String::from_utf8(render(&t, Target::Md, "x").unwrap()).unwrap().contains("| --- |"));
         assert!(String::from_utf8(render(&t, Target::Html, "x").unwrap()).unwrap().contains("<td>Jonas &amp; Co</td>"));
         let pdf = render(&text, Target::Pdf, "x").unwrap();
