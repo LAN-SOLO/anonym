@@ -9,16 +9,19 @@ Anonymisieren ohne KI — Wörterbücher, Muster, Prüfziffern. Lokal, ohne Kont
 - **Ersetzung:** stimmig statt geschwärzt — anderer Name mit gleichem Genus, Familien behalten den
   Nachnamen, IBAN mit gültiger Prüfziffer und gleicher Bank, Telefon mit gleicher Vorwahl, Datum um
   denselben Betrag verschoben. Alternativ Platzhalter `[PERSON 3]`, Schwärzen, Maskieren, Löschen.
-- **Deterministisch:** gleiche Saat + gleiche Datei = gleiche Ausgabe. Kein Zufall, keine KI.
+- **Deterministisch:** gleiche Saat + gleiche Datei = gleiche Ausgabe. Keine KI. Die Saat wird je
+  Installation zufällig erzeugt und wirkt wie ein Schlüssel — ohne sie lassen sich Pseudonyme nicht nachrechnen.
 - **Formate:** Text/Markdown/Logs/JSON/XML/HTML/EML/SRT, CSV/TSV (Spalten-Typisierung), DOCX, XLSX,
   ODT/ODS — Ausgabe im selben Format, alte Codepages (Windows-1252, ISO-8859) bleiben erhalten.
+  Bei DOCX/XLSX/ODF werden Metadaten (Autor, Firma, Kommentar-Autoren) entfernt, gelöschter Text,
+  Kommentare und `mailto:`-Links mitgeprüft.
 - **Vorschau & Bericht:** jede Fundstelle vor dem Schreiben prüfen, annehmen, ablehnen, Ersatz
   ändern, Ausnahmen setzen; Bericht als JSON neben der Ausgabe.
 - **Free** bleibt kostenlos; **masked** (12 €/Jahr, im Vorabzugang frei) bringt Feinjustierung bis ins
   Zeichen, Pseudonym-Speicher über Dateien (Schlüsseldatei), eigene Muster und Wortlisten, weitere
   Codepages und „Alle speichern“.
 
-Status: Version 0.1 (Beta) — Website: https://lan-solo.com/de/tools/anonym/
+Status: Version 1.0 (Test-Build) — Audit: [AUDIT-1.0.md](AUDIT-1.0.md) — Website: https://lan-solo.com/de/tools/anonym/
 
 ## Entwicklung
 
@@ -26,6 +29,9 @@ Status: Version 0.1 (Beta) — Website: https://lan-solo.com/de/tools/anonym/
 pnpm install
 pnpm tauri dev
 cargo test --workspace
+pnpm build
+# Kern ohne App: Analyse als JSON, eigenes Regelwerk
+cargo run -p anonym-core --example anonym-cli -- brief.txt --json --rules=regeln.json
 ```
 
 Der Rust-Kern (`core/`, Crate `anonym-core`) ist Tauri-frei und testbar: Datenmodell,
