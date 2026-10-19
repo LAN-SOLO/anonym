@@ -125,3 +125,46 @@ Je Plattform mit dem CI-Artefakt 1.0.0, frisches Benutzerkonto oder gelöschter 
 14. Einstellungen → App: Version 1.0.0, „Auf Updates prüfen“ (ohne Release: Fehlermeldung oder „aktuell“), Website/GitHub öffnen den Browser.
 15. Hell/Dunkel und alle vier Akzente, DE/EN umschalten (auch im Handbuch), Fenster auf Mindestgröße 960×620: nichts verdeckt.
 16. Tastatur: O, S, R, 1–4, ?, ⌘/Strg+, , Esc.
+
+## Verifikation (unabhängige Zweitprüfung, 2026-10-19)
+
+Ausgangsstand 8123f01, skeptisch gegengeprüft: Diff 5126f76..8123f01 gelesen, alle Suiten selbst
+ausgeführt, zehn fehleranfällige Abläufe einzeln nachvollzogen.
+
+**Bestätigt:** Versionsstand 1.0.0 in `package.json`, `tauri.conf.json`, beiden `Cargo.toml`,
+`Cargo.lock` und `APP_VERSION`; IPC-Namen/Argumente von `new_seed`, `store_import`, `apply_file`,
+`recover_file`, `open_path` passen zu den Rust-Signaturen; Hinweis-Codes (`docx-runs`, `xlsx-cells`,
+`metadata`, `encoding␟…`, `pattern␟…`) werden vom Kern genau so erzeugt und in DE/EN übersetzt;
+`same_file` vergleicht unter Windows beide Seiten kanonisch (`\\?\`-Präfix auf beiden Seiten).
+
+**Widerlegt / ergänzt:**
+- „cargo audit nicht installiert“ stimmt nicht — `cargo audit` lief. Befund: rustls 0.23.45
+  (RUSTSEC-2026-0346…0349, Updater-HTTPS) → per `cargo update -p rustls` auf 0.23.46 (nur Lockfile).
+  Offen und ohne Auswirkung: zip 2.x/4.x RUSTSEC-2026-0367…0369 betreffen nur `extract()`, das
+  anonym nicht aufruft; glib/zvariant/unic/proc-macro-error = Linux-GTK-Unterbau bzw. „unmaintained“.
+- Die Entscheidungs-Zuordnung war nur in der Oberfläche repariert. Speichern, während nach einer
+  Regeländerung (Ausnahme, 600-ms-Verzögerung) die neue Analyse noch lief, schickte weiterhin alte ids
+  an `apply_file` — die dort frisch nummerierten Fundstellen trafen dann die falsche Stelle.
+  Jetzt trägt jede Entscheidung `bstart` + `text`; der Kern ordnet darüber zu (id nur noch als
+  Rückfall). Test `decisions_follow_position_not_stale_id`.
+- Metadaten-Leck übersehen: Vorschaubilder der ersten Seite (`Thumbnails/thumbnail.png`, das
+  LibreOffice immer schreibt; `docProps/thumbnail.*` bei Word) wurden unverändert kopiert und zeigten
+  das Original. Werden jetzt entfernt, samt Manifest-, `.rels`- und Content-Types-Verweis.
+- DOCX-Feldfunktionen (`w:instrText`, z. B. `HYPERLINK "mailto:anna@…"`) wurden nicht geprüft — jetzt
+  mitgeprüft. Test `thumbnails_and_field_codes_do_not_survive`.
+- ZIP-Bombe nur je Teil begrenzt: viele Teile à 256 MB summierten sich. Jetzt höchstens 1 GB
+  Textteile je Dokument; unberührte Teile (Bilder usw.) werden komprimiert per `raw_copy_file`
+  übernommen statt entpackt — die Ausgabe wächst nicht über die Eingabe hinaus.
+- „Ordner öffnen“ bei Dateien im Laufwerks-Stamm übergab unter Windows `C:` (= aktueller Ordner
+  auf C:) bzw. unter macOS einen leeren Pfad; `dirName` behält jetzt die Wurzel (`C:\`, `/`).
+
+**Ausgeführt:** `cargo test --workspace` 45/45 grün (Kern 42, App 3); `pnpm build` grün;
+`cargo clippy --workspace --all-targets` nur vorbestehende Stilwarnungen; `pnpm audit` 0;
+`cargo audit` siehe oben. CLI-Durchlauf (`anonym-cli --apply --export=docx,odt,pdf,xlsx`) mit drei
+echten Office-Dateien (Kopien im Scratch-Ordner, Pfad mit Leerzeichen und Umlaut): alle Ausgaben
+ZIP-intakt, jedes XML wohlgeformt, Eintragsliste identisch zur Quelle, `dc:creator`/`lastModifiedBy`
+leer, DOCX/ODT von macOS `textutil` lesbar. Scratch-Dateien danach gelöscht.
+
+**Nicht selbst geprüft:** echtes Tauri-Fenster, native Dialoge, Drag & Drop, Updater, Installer,
+Öffnen in Word/Excel/LibreOffice ohne Reparaturhinweis, Windows-Laufzeit — siehe manuelle Testliste
+oben (Punkt 8 zusätzlich: ODT aus LibreOffice öffnen, Vorschaubild im Finder/Explorer ist generisch).
