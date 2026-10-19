@@ -232,7 +232,8 @@ fn write_output(doc: &Document, new_text: &str, src: &Path, output: &Path) -> Re
     let exported = match export::Target::from_ext(&out_ext) {
         Some(target) if out_ext != src_ext => {
             let content = export::extract(&doc.kind, &native, new_text)?;
-            let title = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            // Titel aus dem Ausgabenamen — der Quellname kann selbst Personendaten tragen
+            let title = output.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
             Some((target, export::render(&content, target, &title)?))
         }
         _ => None,
@@ -437,5 +438,44 @@ mod tests {
         assert_eq!(applied.report.rejected, 1);
         assert_eq!(result.lines().count(), 2);
         assert_eq!(result.lines().nth(1).unwrap().split(';').count(), 4);
+    }
+
+    #[test]
+    fn docx_leaves_no_trace() {
+        use std::io::{Read, Write};
+        let doc = "<w:document><w:body><w:p><w:r><w:t xml:space=\"preserve\">Sehr geehrte Frau Anna Berger,</w:t></w:r></w:p><w:p><w:del w:id=\"1\" w:author=\"Jonas Krüger\"><w:r><w:delText>Telefon 0221 4711-0</w:delText></w:r></w:del></w:p></w:body></w:document>";
+        let rels = "<Relationships><Relationship Id=\"rId9\" Type=\"h\" Target=\"mailto:anna.berger@example.org\" TargetMode=\"External\"/></Relationships>";
+        let core = "<cp:coreProperties><dc:creator>Jonas Krüger</dc:creator><cp:lastModifiedBy>Jonas Krüger</cp:lastModifiedBy></cp:coreProperties>";
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut w = zip::ZipWriter::new(&mut buf);
+            let o = zip::write::SimpleFileOptions::default();
+            for (n, c) in [("word/document.xml", doc), ("word/_rels/document.xml.rels", rels), ("docProps/core.xml", core)] {
+                w.start_file(n, o).unwrap();
+                w.write_all(c.as_bytes()).unwrap();
+            }
+            w.finish().unwrap();
+        }
+        // Eigener Ordner: parallel laufende Tests schreiben sonst Temp-Dateien daneben
+        let dir = std::env::temp_dir().join(format!("anonym-core-spur-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("spur.docx");
+        std::fs::write(&path, buf.into_inner()).unwrap();
+        let (dicts, rules, opts) = (Dictionaries::builtin(), Rules::default(), Options::default());
+        let out = suggest_output(&path, None, "");
+        apply_file(&path, &rules, &dicts, &opts, &[], &out).unwrap();
+        let mut a = zip::ZipArchive::new(std::fs::File::open(&out).unwrap()).unwrap();
+        for i in 0..a.len() {
+            let mut f = a.by_index(i).unwrap();
+            let mut s = String::new();
+            f.read_to_string(&mut s).unwrap();
+            for secret in ["Berger", "berger", "Krüger", "4711"] {
+                assert!(!s.contains(secret), "{} enthält {secret}: {s}", f.name());
+            }
+        }
+        // Kein Temp-Rest im Ausgabeordner
+        let leftovers: Vec<_> = std::fs::read_dir(out.parent().unwrap()).unwrap().filter_map(|e| e.ok()).filter(|e| e.file_name().to_string_lossy().ends_with(".anonym-tmp")).collect();
+        assert!(leftovers.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

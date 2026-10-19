@@ -31,7 +31,51 @@ pub struct Container {
 
 fn re_docx() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"<w:t(?:\s[^>]*)?>([^<]*)</w:t>").unwrap())
+    // `w:delText` = gelöschter Text aus „Änderungen verfolgen“ — bleibt im Dokument und muss mit
+    R.get_or_init(|| Regex::new(r"<w:(?:t|delText)(?:\s[^>]*)?>([^<]*)</w:(?:t|delText)>").unwrap())
+}
+/// Kommentare in XLSX (klassisch `<t>`, Threaded Comments `<text>`).
+fn re_xlsx_comment() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| Regex::new(r"<(?:t|text)(?:\s[^>]*)?>([^<]*)</(?:t|text)>").unwrap())
+}
+/// Externe Beziehungen (Hyperlinks, `mailto:`) in `.rels`-Teilen: Wert von `Target`.
+fn re_rel() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| Regex::new(r#"<Relationship\b[^>]*>"#).unwrap())
+}
+fn re_rel_target() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| Regex::new(r#"\sTarget="([^"]*)""#).unwrap())
+}
+/// Externe Links in ODF (`xlink:href="mailto:…"`, `https:…`) — interne Verweise (`#…`, `Pictures/…`) nicht.
+fn re_odf_href() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| Regex::new(r#"\sxlink:href="([A-Za-z][A-Za-z0-9+.-]*:[^"]*)""#).unwrap())
+}
+
+/// Obergrenze je Archiv-Teil (entpackt) — schützt vor ZIP-Bomben.
+pub const MAX_PART_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Archiv-Eintrag mit Größenbremse lesen (die Größenangabe im ZIP kann lügen).
+pub(crate) fn read_limited(r: &mut impl Read, declared: u64, name: &str) -> Result<Vec<u8>, String> {
+    if declared > MAX_PART_BYTES {
+        return Err(format!("{name}: Archiv-Teil zu groß ({} MB, Grenze {} MB)", declared / 1_048_576, MAX_PART_BYTES / 1_048_576));
+    }
+    let mut buf = Vec::new();
+    r.take(MAX_PART_BYTES + 1).read_to_end(&mut buf).map_err(|e| format!("{name}: {e}"))?;
+    if buf.len() as u64 > MAX_PART_BYTES {
+        return Err(format!("{name}: Archiv-Teil zu groß (Grenze {} MB)", MAX_PART_BYTES / 1_048_576));
+    }
+    Ok(buf)
+}
+
+pub(crate) fn read_limited_string(r: &mut impl Read, declared: u64, name: &str) -> Result<String, String> {
+    String::from_utf8(read_limited(r, declared, name)?).map_err(|e| format!("{name}: {e}"))
+}
+
+fn is_rels(name: &str) -> bool {
+    name.ends_with(".rels")
 }
 fn re_xlsx() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
@@ -100,9 +144,21 @@ fn part_names(archive: &mut ZipArchive<Cursor<&[u8]>>, kind: &Kind) -> Vec<Strin
     let mut names: Vec<String> = (0..archive.len()).filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string())).collect();
     names.sort();
     match kind {
-        Kind::Docx => names.into_iter().filter(|n| n == "word/document.xml" || n.starts_with("word/footnotes") || n.starts_with("word/endnotes") || n.starts_with("word/header") || n.starts_with("word/footer") || n.starts_with("word/comments")).collect(),
-        Kind::Xlsx => names.into_iter().filter(|n| n == "xl/sharedStrings.xml" || (n.starts_with("xl/worksheets/sheet") && n.ends_with(".xml")) || n == "xl/comments1.xml").collect(),
-        _ => names.into_iter().filter(|n| n == "content.xml").collect(),
+        Kind::Docx => names
+            .into_iter()
+            .filter(|n| n == "word/document.xml" || n.starts_with("word/footnotes") || n.starts_with("word/endnotes") || n.starts_with("word/header") || n.starts_with("word/footer") || n.starts_with("word/comments") || (n.starts_with("word/_rels/") && is_rels(n)))
+            .collect(),
+        Kind::Xlsx => names
+            .into_iter()
+            .filter(|n| {
+                n == "xl/sharedStrings.xml"
+                    || (n.starts_with("xl/worksheets/sheet") && n.ends_with(".xml"))
+                    || (n.starts_with("xl/comments") && n.ends_with(".xml"))
+                    || (n.starts_with("xl/threadedComments/") && n.ends_with(".xml"))
+                    || (n.starts_with("xl/worksheets/_rels/") && is_rels(n))
+            })
+            .collect(),
+        _ => names.into_iter().filter(|n| n == "content.xml" || n == "styles.xml").collect(),
     }
 }
 
@@ -116,8 +172,8 @@ pub fn open(bytes: Vec<u8>, kind: Kind) -> Result<Document, String> {
     let mut parts: Vec<(String, String)> = Vec::new();
     for name in &names {
         let mut f = archive.by_name(name).map_err(|e| e.to_string())?;
-        let mut s = String::new();
-        f.read_to_string(&mut s).map_err(|e| format!("{name}: {e}"))?;
+        let size = f.size();
+        let s = read_limited_string(&mut f, size, name)?;
         parts.push((name.clone(), s));
     }
     let re = match kind {
@@ -131,26 +187,50 @@ pub fn open(bytes: Vec<u8>, kind: Kind) -> Result<Document, String> {
     let mut cells = Vec::new();
     if kind == Kind::Xlsx {
         xlsx_nodes(&parts, &mut nodes, &mut text, &mut forced, &mut cells);
+        // Kommentare (klassisch + Threaded Comments) als eigene Zeilen
+        for (pi, (name, content)) in parts.iter().enumerate() {
+            if name.starts_with("xl/comments") || name.starts_with("xl/threadedComments/") {
+                push_nodes(re_xlsx_comment(), pi, content, &mut nodes, &mut text);
+            }
+        }
     } else {
-        for (pi, (_, content)) in parts.iter().enumerate() {
-            for c in re.captures_iter(content) {
+        for (pi, (name, content)) in parts.iter().enumerate() {
+            if is_rels(name) {
+                continue;
+            }
+            push_nodes(re, pi, content, &mut nodes, &mut text);
+            if kind == Kind::Odf {
+                push_nodes(re_odf_href(), pi, content, &mut nodes, &mut text);
+            }
+        }
+    }
+    // Externe Link-Ziele (DOCX/XLSX): `mailto:anna@…` in den Beziehungen
+    for (pi, (name, content)) in parts.iter().enumerate() {
+        if !is_rels(name) {
+            continue;
+        }
+        for rel in re_rel().find_iter(content) {
+            if !rel.as_str().contains("TargetMode=\"External\"") {
+                continue;
+            }
+            if let Some(c) = re_rel_target().captures(rel.as_str()) {
                 let g = c.get(1).unwrap();
-                let raw = g.as_str();
-                if raw.trim().is_empty() {
+                if g.as_str().trim().is_empty() {
                     continue;
                 }
-                nodes.push(Node { part: pi, start: g.start(), end: g.end() });
-                text.push_str(&unescape(raw).replace(['\n', '\r'], " "));
+                nodes.push(Node { part: pi, start: rel.start() + g.start(), end: rel.start() + g.end() });
+                text.push_str(&unescape(g.as_str()).replace(['\n', '\r'], " "));
                 text.push('\n');
             }
         }
     }
     let mut notes = Vec::new();
     match kind {
-        Kind::Docx => notes.push("Word: Jeder Formatierungslauf ist eine Zeile — ein Name, den Word über zwei Läufe verteilt hat, erscheint geteilt.".into()),
-        Kind::Xlsx => notes.push("Excel: Textzellen aller Blätter; Zahlenzellen nur in Spalten, deren Kopfzeile eine Kategorie nennt (Kd-Nr., Telefon, PLZ, Geb. …).".into()),
+        Kind::Docx => notes.push("docx-runs".into()),
+        Kind::Xlsx => notes.push("xlsx-cells".into()),
         _ => {}
     }
+    notes.push("metadata".into());
     Ok(Document {
         kind: kind.clone(),
         text,
@@ -162,15 +242,31 @@ pub fn open(bytes: Vec<u8>, kind: Kind) -> Result<Document, String> {
     })
 }
 
+/// Alle Treffer von `re` (Gruppe 1 = Textknoten) eines Teils als Zeilen aufnehmen.
+fn push_nodes(re: &Regex, pi: usize, content: &str, nodes: &mut Vec<Node>, text: &mut String) {
+    for c in re.captures_iter(content) {
+        let g = c.get(1).unwrap();
+        let raw = g.as_str();
+        if raw.trim().is_empty() {
+            continue;
+        }
+        nodes.push(Node { part: pi, start: g.start(), end: g.end() });
+        text.push_str(&unescape(raw).replace(['\n', '\r'], " "));
+        text.push('\n');
+    }
+}
+
 /// Kategorien, die auch in Zahlenzellen sinnvoll sind (Datum = Excel-Seriennummer).
 fn numeric_ok(c: Category) -> bool {
     matches!(c, Category::CustomerId | Category::Phone | Category::PostalCode | Category::TaxId | Category::Insurance | Category::CreditCard | Category::Date)
 }
 
-fn col_index(cell_ref: &str) -> usize {
+/// Spaltenindex aus einer Zellreferenz („B7“ → 1). Excel kennt höchstens 16 384 Spalten (XFD);
+/// längere Buchstabenfolgen aus manipulierten Dateien werden gekappt statt überzulaufen.
+pub(crate) fn col_index(cell_ref: &str) -> usize {
     let mut n = 0usize;
     for c in cell_ref.chars().take_while(|c| c.is_ascii_alphabetic()) {
-        n = n * 26 + (c.to_ascii_uppercase() as usize - 'A' as usize + 1);
+        n = n.saturating_mul(26).saturating_add(c.to_ascii_uppercase() as usize - 'A' as usize + 1).min(16_384);
     }
     n.saturating_sub(1)
 }
@@ -222,7 +318,7 @@ fn xlsx_nodes(parts: &[(String, String)], nodes: &mut Vec<Node>, text: &mut Stri
 
     // 2) Blätter
     for (pi, (name, content)) in parts.iter().enumerate() {
-        if !name.starts_with("xl/worksheets/") {
+        if !name.starts_with("xl/worksheets/") || is_rels(name) {
             continue;
         }
         let sheet_id = name.trim_start_matches("xl/worksheets/").trim_end_matches(".xml").to_string();
@@ -331,6 +427,76 @@ fn xlsx_nodes(parts: &[(String, String)], nodes: &mut Vec<Node>, text: &mut Stri
     }
 }
 
+/// Platzhalter für entfernte Personen-Metadaten.
+pub const META_ANON: &str = "anonym";
+
+fn element_re(tag: &str) -> Regex {
+    let t = regex::escape(tag);
+    Regex::new(&format!(r"(<{t}(?:\s[^>]*)?>)[^<]*(</{t}>)")).unwrap()
+}
+fn attr_re(attr: &str) -> Regex {
+    let a = regex::escape(attr);
+    Regex::new(&format!(r#"(\s{a}=")[^"]*(")"#)).unwrap()
+}
+
+struct Scrubber {
+    clear: Vec<Regex>,
+    anon: Vec<Regex>,
+    initials: Vec<Regex>,
+}
+
+fn scrubber(clear: &[&str], anon_elems: &[&str], anon_attrs: &[&str], initial_attrs: &[&str]) -> Scrubber {
+    Scrubber {
+        clear: clear.iter().map(|t| element_re(t)).collect(),
+        anon: anon_elems.iter().map(|t| element_re(t)).chain(anon_attrs.iter().map(|a| attr_re(a))).collect(),
+        initials: initial_attrs.iter().map(|a| attr_re(a)).collect(),
+    }
+}
+
+/// Personenbezogene Metadaten eines Archiv-Teils entfernen: Dokument-Eigenschaften
+/// (Autor, zuletzt geändert von, Titel, Thema, Stichwörter, Firma, Manager), Autoren von
+/// Kommentaren und Überarbeitungen, Personenlisten. `None` = Teil bleibt unverändert.
+pub fn scrub_metadata(name: &str, content: &str) -> Option<String> {
+    static CORE: OnceLock<Scrubber> = OnceLock::new();
+    static APP: OnceLock<Scrubber> = OnceLock::new();
+    static WORD: OnceLock<Scrubber> = OnceLock::new();
+    static XL_COMMENTS: OnceLock<Scrubber> = OnceLock::new();
+    static XL_PERSONS: OnceLock<Scrubber> = OnceLock::new();
+    static ODF_META: OnceLock<Scrubber> = OnceLock::new();
+    static ODF_CONTENT: OnceLock<Scrubber> = OnceLock::new();
+    let sc = match name {
+        "docProps/core.xml" => CORE.get_or_init(|| scrubber(&["dc:creator", "cp:lastModifiedBy", "dc:title", "dc:subject", "dc:description", "cp:keywords"], &[], &[], &[])),
+        "docProps/app.xml" => APP.get_or_init(|| scrubber(&["Company", "Manager"], &[], &[], &[])),
+        n if n.starts_with("word/") && n.ends_with(".xml") => WORD.get_or_init(|| scrubber(&[], &[], &["w:author", "w15:author", "w15:userId"], &["w:initials"])),
+        n if n.starts_with("xl/comments") && n.ends_with(".xml") => XL_COMMENTS.get_or_init(|| scrubber(&[], &["author"], &[], &[])),
+        n if n.starts_with("xl/persons/") && n.ends_with(".xml") => XL_PERSONS.get_or_init(|| scrubber(&[], &[], &["displayName", "userId"], &[])),
+        "meta.xml" => ODF_META.get_or_init(|| scrubber(&["meta:initial-creator", "dc:creator", "meta:printed-by", "dc:title", "dc:subject", "dc:description", "meta:keyword"], &[], &[], &[])),
+        "content.xml" | "styles.xml" => ODF_CONTENT.get_or_init(|| scrubber(&[], &["dc:creator"], &[], &[])),
+        _ => return None,
+    };
+    let mut out = std::borrow::Cow::Borrowed(content);
+    for re in &sc.clear {
+        if let std::borrow::Cow::Owned(s) = re.replace_all(&out, "${1}${2}") {
+            out = std::borrow::Cow::Owned(s);
+        }
+    }
+    let anon = format!("${{1}}{META_ANON}${{2}}");
+    for re in &sc.anon {
+        if let std::borrow::Cow::Owned(s) = re.replace_all(&out, anon.as_str()) {
+            out = std::borrow::Cow::Owned(s);
+        }
+    }
+    for re in &sc.initials {
+        if let std::borrow::Cow::Owned(s) = re.replace_all(&out, "${1}A${2}") {
+            out = std::borrow::Cow::Owned(s);
+        }
+    }
+    match out {
+        std::borrow::Cow::Owned(s) if s != content => Some(s),
+        _ => None,
+    }
+}
+
 /// Neuen virtuellen Text (Zeile je Knoten) in die XML-Teile schreiben und das Archiv neu packen.
 pub fn rebuild(c: &Container, old_text: &str, new_text: &str) -> Result<Vec<u8>, String> {
     let old_lines: Vec<&str> = old_text.split('\n').collect();
@@ -338,15 +504,24 @@ pub fn rebuild(c: &Container, old_text: &str, new_text: &str) -> Result<Vec<u8>,
     if new_lines.len() != old_lines.len() {
         return Err("Interner Fehler: Zeilenzahl der Vorschau passt nicht zum Dokument".into());
     }
-    // Je Teil: Knoten rückwärts ersetzen, damit Offsets gültig bleiben
+    // Je Teil: Knoten von hinten nach vorn ersetzen, damit Offsets gültig bleiben
+    // (Textknoten und Link-Ziele eines Teils stehen nicht in Offset-Reihenfolge)
     let mut contents: Vec<String> = c.parts.iter().map(|(_, s)| s.clone()).collect();
-    for (li, node) in c.nodes.iter().enumerate().rev() {
+    let mut order: Vec<usize> = (0..c.nodes.len()).collect();
+    order.sort_by(|&a, &b| (c.nodes[b].part, c.nodes[b].start).cmp(&(c.nodes[a].part, c.nodes[a].start)));
+    for li in order {
+        let node = &c.nodes[li];
         if old_lines[li] == new_lines[li] {
             continue;
         }
         let part = &mut contents[node.part];
         let replacement = escape(new_lines[li]);
         part.replace_range(node.start..node.end, &replacement);
+    }
+    for (pi, (name, _)) in c.parts.iter().enumerate() {
+        if let Some(clean) = scrub_metadata(name, &contents[pi]) {
+            contents[pi] = clean;
+        }
     }
     // Leerzeichen am Rand brauchen xml:space="preserve" (DOCX); vorhandene Attribute behalten
     let cursor = Cursor::new(c.bytes.as_slice());
@@ -368,9 +543,13 @@ pub fn rebuild(c: &Container, old_text: &str, new_text: &str) -> Result<Vec<u8>,
             if let Some(pi) = c.parts.iter().position(|(n, _)| *n == name) {
                 writer.write_all(contents[pi].as_bytes()).map_err(|e| e.to_string())?;
             } else {
-                let mut buf = Vec::new();
-                f.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-                writer.write_all(&buf).map_err(|e| e.to_string())?;
+                let size = f.size();
+                let buf = read_limited(&mut f, size, &name)?;
+                // Metadaten (Autor, Firma, Personen) in Teilen ohne Textknoten leeren
+                match std::str::from_utf8(&buf).ok().and_then(|s| scrub_metadata(&name, s)) {
+                    Some(clean) => writer.write_all(clean.as_bytes()).map_err(|e| e.to_string())?,
+                    None => writer.write_all(&buf).map_err(|e| e.to_string())?,
+                }
             }
         }
         writer.finish().map_err(|e| e.to_string())?;
@@ -472,5 +651,99 @@ mod tests {
         let part = &again.xml.unwrap().parts[0].1;
         assert!(part.contains("Tim &amp; Jerry &lt;3"));
         assert!(part.contains("<w:t xml:space=\"preserve\">"));
+    }
+
+    fn zip_of(entries: &[(&str, &str)]) -> Vec<u8> {
+        let mut out = Cursor::new(Vec::new());
+        {
+            let mut w = ZipWriter::new(&mut out);
+            let o = SimpleFileOptions::default();
+            for (n, c) in entries {
+                w.start_file(*n, o).unwrap();
+                w.write_all(c.as_bytes()).unwrap();
+            }
+            w.finish().unwrap();
+        }
+        out.into_inner()
+    }
+
+    fn part_of(bytes: &[u8], name: &str) -> String {
+        let mut a = ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let mut f = a.by_name(name).unwrap();
+        let mut s = String::new();
+        f.read_to_string(&mut s).unwrap();
+        s
+    }
+
+    #[test]
+    fn docx_deleted_text_links_and_metadata() {
+        let doc = "<w:document><w:body><w:p><w:ins w:id=\"1\" w:author=\"Stefan Mau\"><w:r><w:t>Neu</w:t></w:r></w:ins><w:del w:id=\"2\" w:author=\"Stefan Mau\" w:initials=\"SM\"><w:r><w:delText>Anna Berger</w:delText></w:r></w:del><w:hyperlink r:id=\"rId5\"><w:r><w:t>Mail</w:t></w:r></w:hyperlink></w:p></w:body></w:document>";
+        let rels = "<Relationships><Relationship Id=\"rId1\" Type=\"x/styles\" Target=\"styles.xml\"/><Relationship Id=\"rId5\" Type=\"x/hyperlink\" Target=\"mailto:anna.berger@example.org\" TargetMode=\"External\"/></Relationships>";
+        let core = "<cp:coreProperties><dc:title>Brief an Anna Berger</dc:title><dc:creator>Stefan Mau</dc:creator><cp:lastModifiedBy>Stefan Mau</cp:lastModifiedBy><dcterms:created xsi:type=\"dcterms:W3CDTF\">2024-01-01T00:00:00Z</dcterms:created></cp:coreProperties>";
+        let app = "<Properties><Company>Red6 GmbH</Company><Pages>1</Pages></Properties>";
+        let bytes = zip_of(&[("word/document.xml", doc), ("word/_rels/document.xml.rels", rels), ("docProps/core.xml", core), ("docProps/app.xml", app)]);
+        let d = open(bytes, Kind::Docx).unwrap();
+        assert_eq!(d.text, "Neu\nAnna Berger\nMail\nmailto:anna.berger@example.org\n");
+        let new_text = "Neu\nPaula Vogt\nMail\nmailto:paula.vogt@example.org\n";
+        let out = rebuild(d.xml.as_ref().unwrap(), &d.text, new_text).unwrap();
+        let docx = part_of(&out, "word/document.xml");
+        assert!(docx.contains("<w:delText>Paula Vogt</w:delText>") && !docx.contains("Stefan") && docx.contains("w:initials=\"A\""), "{docx}");
+        let rels2 = part_of(&out, "word/_rels/document.xml.rels");
+        assert!(rels2.contains("Target=\"mailto:paula.vogt@example.org\"") && rels2.contains("Target=\"styles.xml\""), "{rels2}");
+        let core2 = part_of(&out, "docProps/core.xml");
+        assert!(!core2.contains("Stefan") && !core2.contains("Anna") && core2.contains("<dc:creator></dc:creator>") && core2.contains("2024-01-01"), "{core2}");
+        assert!(!part_of(&out, "docProps/app.xml").contains("Red6"));
+        // Unverändertes Dokument: Metadaten werden trotzdem entfernt
+        let out2 = rebuild(d.xml.as_ref().unwrap(), &d.text, &d.text).unwrap();
+        assert!(!part_of(&out2, "docProps/core.xml").contains("Stefan"));
+    }
+
+    #[test]
+    fn xlsx_comments_are_checked_and_authors_removed() {
+        let sheet = "<worksheet><sheetData><row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>x</t></is></c></row></sheetData></worksheet>";
+        let comments = "<comments><authors><author>Stefan Mau</author></authors><commentList><comment ref=\"A1\" authorId=\"0\"><text><r><t>Frau Berger anrufen</t></r></text></comment></commentList></comments>";
+        let persons = "<personList><person displayName=\"Stefan Mau\" id=\"{1}\" userId=\"stefan@example.org\" providerId=\"AD\"/></personList>";
+        let bytes = zip_of(&[("xl/worksheets/sheet1.xml", sheet), ("xl/comments1.xml", comments), ("xl/persons/person.xml", persons)]);
+        let d = open(bytes, Kind::Xlsx).unwrap();
+        assert!(d.text.contains("Frau Berger anrufen\n"), "{}", d.text);
+        assert!(!d.text.contains("Stefan"));
+        let new_text = d.text.replace("Berger", "Vogt");
+        let out = rebuild(d.xml.as_ref().unwrap(), &d.text, &new_text).unwrap();
+        let c = part_of(&out, "xl/comments1.xml");
+        assert!(c.contains("<author>anonym</author>") && c.contains("Frau Vogt anrufen"), "{c}");
+        let p = part_of(&out, "xl/persons/person.xml");
+        assert!(!p.contains("Stefan") && !p.contains("stefan@") && p.contains("providerId=\"AD\""), "{p}");
+    }
+
+    #[test]
+    fn odf_styles_links_and_meta() {
+        let content = "<office:document-content><office:body><text:p>Hallo <text:a xlink:href=\"mailto:anna@example.org\">Mail</text:a></text:p><office:annotation><dc:creator>Stefan Mau</dc:creator><text:p>Notiz</text:p></office:annotation><text:a xlink:href=\"#Kapitel\">x</text:a></office:body></office:document-content>";
+        let styles = "<office:document-styles><style:header><text:p>Kopf: Anna Berger</text:p></style:header></office:document-styles>";
+        let meta = "<office:meta><meta:initial-creator>Stefan Mau</meta:initial-creator><dc:creator>Stefan Mau</dc:creator><meta:generator>LibreOffice</meta:generator></office:meta>";
+        let bytes = zip_of(&[("mimetype", "application/vnd.oasis.opendocument.text"), ("content.xml", content), ("styles.xml", styles), ("meta.xml", meta)]);
+        let d = open(bytes, Kind::Odf).unwrap();
+        assert!(d.text.contains("mailto:anna@example.org\n") && d.text.contains("Kopf: Anna Berger\n"), "{}", d.text);
+        assert!(!d.text.contains("#Kapitel"));
+        let new_text = d.text.replace("anna@example.org", "paula@example.org").replace("Anna Berger", "Paula Vogt");
+        let out = rebuild(d.xml.as_ref().unwrap(), &d.text, &new_text).unwrap();
+        let c = part_of(&out, "content.xml");
+        assert!(c.contains("xlink:href=\"mailto:paula@example.org\"") && c.contains("<dc:creator>anonym</dc:creator>") && c.contains("Hallo "), "{c}");
+        assert!(part_of(&out, "styles.xml").contains("Kopf: Paula Vogt"));
+        let m = part_of(&out, "meta.xml");
+        assert!(!m.contains("Stefan") && m.contains("LibreOffice"), "{m}");
+    }
+
+    #[test]
+    fn limits_and_hostile_input() {
+        // Zellreferenz mit absurd vielen Buchstaben läuft nicht über
+        assert_eq!(col_index("B7"), 1);
+        assert_eq!(col_index("XFD1"), 16_383);
+        assert_eq!(col_index(&"Z".repeat(64)), 16_383);
+        // Größenbremse: gelogene Größenangabe und zu großer Inhalt
+        let data = vec![b'a'; 16];
+        assert!(read_limited(&mut data.as_slice(), MAX_PART_BYTES + 1, "x").is_err());
+        assert_eq!(read_limited(&mut data.as_slice(), 0, "x").unwrap().len(), 16);
+        // Kein ZIP → Fehler statt Absturz
+        assert!(open(b"kein zip".to_vec(), Kind::Docx).is_err());
     }
 }

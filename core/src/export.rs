@@ -5,7 +5,7 @@
 use crate::formats::xml::{escape, unescape};
 use crate::formats::Kind;
 use regex::Regex;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 use std::sync::OnceLock;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
@@ -127,9 +127,8 @@ fn zip_part(bytes: &[u8], name: &str) -> Result<Option<String>, String> {
         Ok(f) => f,
         Err(_) => return Ok(None),
     };
-    let mut s = String::new();
-    f.read_to_string(&mut s).map_err(|e| e.to_string())?;
-    Ok(Some(s))
+    let size = f.size();
+    crate::formats::xml::read_limited_string(&mut f, size, name).map(Some)
 }
 
 fn zip_names(bytes: &[u8]) -> Result<Vec<String>, String> {
@@ -163,13 +162,7 @@ fn docx_paragraphs(bytes: &[u8]) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-fn col_index(cell_ref: &str) -> usize {
-    let mut n = 0usize;
-    for c in cell_ref.chars().take_while(|c| c.is_ascii_alphabetic()) {
-        n = n * 26 + (c.to_ascii_uppercase() as usize - 'A' as usize + 1);
-    }
-    n.saturating_sub(1)
-}
+use crate::formats::xml::col_index;
 
 fn xlsx_tables(bytes: &[u8]) -> Result<Vec<Table>, String> {
     let shared: Vec<String> = match zip_part(bytes, "xl/sharedStrings.xml")? {

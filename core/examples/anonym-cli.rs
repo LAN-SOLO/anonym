@@ -1,7 +1,8 @@
 //! Kleiner Kommandozeilen-Lauf über den Kern:
-//! `cargo run --example anonym-cli -- <datei> [--apply] [--export=xlsx,pdf,…]`
+//! `cargo run --example anonym-cli -- <datei> [--apply] [--export=xlsx,pdf,…] [--rules=regeln.json] [--json]`
 //! Druckt die Fundstellen, schreibt bei `--apply` `<name>.anonym.<ext>` daneben und
-//! bei `--export` zusätzlich die genannten Formate.
+//! bei `--export` zusätzlich die genannten Formate. `--json` druckt die Analyse als JSON
+//! (wie sie die App bekommt), `--rules` liest ein exportiertes Regelwerk.
 
 use anonym_core::{analyze, apply_file, suggest_output, suggest_output_as, Dictionaries, Options, Rules};
 use std::path::Path;
@@ -11,12 +12,17 @@ fn main() {
     let apply = args.iter().any(|a| a == "--apply");
     let exports: Vec<String> = args.iter().filter_map(|a| a.strip_prefix("--export=")).flat_map(|v| v.split(',').map(|s| s.trim().to_string())).collect();
     let files: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
+    let json = args.iter().any(|a| a == "--json");
     let dicts = Dictionaries::builtin();
-    let rules = Rules::default();
+    let rules: Rules = match args.iter().find_map(|a| a.strip_prefix("--rules=")) {
+        Some(p) => serde_json::from_str(&std::fs::read_to_string(p).expect("Regelwerk nicht lesbar")).expect("Kein gültiges Regelwerk"),
+        None => Rules::default(),
+    };
     let opts = Options::default();
     for f in files {
         let path = Path::new(f);
         match analyze(path, &rules, &dicts, &opts) {
+            Ok(a) if json => println!("{}", serde_json::to_string(&a).unwrap()),
             Ok(a) => {
                 println!("== {} [{} · {} · {} Zeilen · {} Fundstellen]", a.path, a.format, a.encoding, a.lines, a.findings.len());
                 for n in &a.notes {

@@ -384,7 +384,7 @@ fn detect_custom(text: &str, patterns: &[CustomPattern], words: &[CustomWords], 
                     }
                 }
             }
-            Err(e) => notes.push(format!("Muster „{}“ ungültig: {}", cp.name, e)),
+            Err(e) => notes.push(format!("pattern\u{1f}{}\u{1f}{}", cp.name, e.to_string().lines().last().unwrap_or_default())),
         }
     }
     for cw in words {

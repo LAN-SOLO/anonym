@@ -71,7 +71,17 @@ pub fn extension(path: &Path) -> String {
 }
 
 /// Datei öffnen und in den virtuellen Text überführen.
+/// Größte Eingabedatei — darüber wird die Vorschau im Fenster unbrauchbar und der Speicher knapp.
+pub const MAX_INPUT_BYTES: u64 = 512 * 1024 * 1024;
+
 pub fn open(path: &Path, fallback_encoding: &str) -> Result<Document, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("Datei nicht lesbar: {e}"))?;
+    if !meta.is_file() {
+        return Err("Keine Datei".into());
+    }
+    if meta.len() > MAX_INPUT_BYTES {
+        return Err(format!("Datei zu groß ({} MB, Grenze {} MB)", meta.len() / 1_048_576, MAX_INPUT_BYTES / 1_048_576));
+    }
     let bytes = std::fs::read(path).map_err(|e| format!("Datei nicht lesbar: {e}"))?;
     let ext = extension(path);
     match ext.as_str() {
@@ -86,7 +96,7 @@ pub fn open(path: &Path, fallback_encoding: &str) -> Result<Document, String> {
             };
             let mut notes = Vec::new();
             if encoding.legacy {
-                notes.push(format!("Kodierung {} erkannt — Ausgabe in derselben Kodierung.", encoding.name));
+                notes.push(format!("encoding\u{1f}{}", encoding.name));
             }
             Ok(Document { kind, text, encoding, xml: None, notes, forced: Vec::new(), cells: Vec::new() })
         }
@@ -101,25 +111,39 @@ pub fn render(doc: &Document, new_text: &str) -> Result<Vec<u8>, String> {
     }
 }
 
-/// Bytes atomar schreiben (Temp-Datei + rename).
+/// Bytes atomar schreiben: Temp-Datei im selben Ordner + rename. Die Temp-Datei trägt den
+/// vollen Dateinamen (kein Zusammenstoß mit Nachbardateien gleichen Stamms) und wird bei
+/// einem Fehler wieder entfernt.
 pub fn write_bytes(bytes: &[u8], out: &Path) -> Result<(), String> {
-    if let Some(parent) = out.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("Ordner anlegen fehlgeschlagen: {e}"))?;
+    let parent = out.parent().filter(|p| !p.as_os_str().is_empty());
+    if let Some(parent) = parent {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Ordner anlegen fehlgeschlagen: {}", io_hint(&e)))?;
     }
-    let tmp = out.with_extension("anonym-tmp");
-    std::fs::write(&tmp, bytes).map_err(|e| format!("Schreiben fehlgeschlagen: {e}"))?;
-    std::fs::rename(&tmp, out).map_err(|e| format!("Umbenennen fehlgeschlagen: {e}"))
+    let name = out.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or("Ungültiger Ausgabepfad")?;
+    let tmp = out.with_file_name(format!(".{name}.{}.anonym-tmp", std::process::id()));
+    if let Err(e) = std::fs::write(&tmp, bytes) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("Schreiben fehlgeschlagen: {}", io_hint(&e)));
+    }
+    if let Err(e) = std::fs::rename(&tmp, out) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("Speichern fehlgeschlagen: {}", io_hint(&e)));
+    }
+    Ok(())
+}
+
+/// I/O-Fehler mit Hinweis — unter Windows sperrt etwa Excel eine geöffnete Datei.
+fn io_hint(e: &std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::PermissionDenied {
+        format!("{e} — ist die Datei in einem anderen Programm geöffnet oder schreibgeschützt?")
+    } else {
+        e.to_string()
+    }
 }
 
 /// Ausgabe schreiben: neuer virtueller Text → Datei im Ursprungsformat.
 pub fn write(doc: &Document, new_text: &str, out: &Path) -> Result<(), String> {
-    let bytes = render(doc, new_text)?;
-    if let Some(parent) = out.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("Ordner anlegen fehlgeschlagen: {e}"))?;
-    }
-    let tmp = out.with_extension("anonym-tmp");
-    std::fs::write(&tmp, bytes).map_err(|e| format!("Schreiben fehlgeschlagen: {e}"))?;
-    std::fs::rename(&tmp, out).map_err(|e| format!("Umbenennen fehlgeschlagen: {e}"))
+    write_bytes(&render(doc, new_text)?, out)
 }
 
 /// Endungen, die anonym öffnet (für Dateidialoge).
