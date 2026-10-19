@@ -103,9 +103,24 @@ pub fn build(report: &Report, pseudo: &Pseudonymizer, seed: &str, world: &str) -
     }
 }
 
-fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32], String> {
-    let mut key = [0u8; 32];
-    argon2::Argon2::default().hash_password_into(password.as_bytes(), salt, &mut key).map_err(|e| format!("Schlüsselableitung fehlgeschlagen: {e}"))?;
+/// Abgeleiteter Schlüssel, der beim Verlassen des Gültigkeitsbereichs überschrieben wird.
+struct Key([u8; 32]);
+
+impl Drop for Key {
+    fn drop(&mut self) {
+        for b in self.0.iter_mut() {
+            // volatile, damit der Compiler das Überschreiben nicht wegoptimiert
+            unsafe { std::ptr::write_volatile(b, 0) };
+        }
+        std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Argon2id v19 mit den Standardparametern des Crates (19 MiB, 2 Durchläufe, 1 Spur —
+/// OWASP-Empfehlung). Die Parameter stehen fest, damit alte Recover-Dateien lesbar bleiben.
+fn derive_key(password: &str, salt: &[u8]) -> Result<Key, String> {
+    let mut key = Key([0u8; 32]);
+    argon2::Argon2::default().hash_password_into(password.as_bytes(), salt, &mut key.0).map_err(|e| format!("Schlüsselableitung fehlgeschlagen: {e}"))?;
     Ok(key)
 }
 
@@ -120,7 +135,8 @@ pub fn seal(file: &RecoverFile, password: Option<&str>) -> Result<Vec<u8>, Strin
     use chacha20poly1305::aead::rand_core::RngCore;
     OsRng.fill_bytes(&mut salt);
     let key = derive_key(pw, &salt)?;
-    let cipher = XChaCha20Poly1305::new((&key).into());
+    let cipher = XChaCha20Poly1305::new((&key.0).into());
+    // Zufällige 192-Bit-Nonce je Datei (XChaCha) — mit frischem Salz ohnehin frischer Schlüssel
     let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
     let ct = cipher.encrypt(&nonce, plain.as_ref()).map_err(|_| "Verschlüsselung fehlgeschlagen".to_string())?;
     let sealed = Sealed { tool: "anonym".into(), encrypted: true, kdf: "argon2id".into(), salt: b64.encode(salt), nonce: b64.encode(nonce), ciphertext: b64.encode(ct) };
@@ -141,8 +157,11 @@ pub fn open(bytes: &[u8], password: Option<&str>) -> Result<RecoverFile, String>
             let salt = b64.decode(&sealed.salt).map_err(|_| "Recover-Datei beschädigt (salt)")?;
             let nonce = b64.decode(&sealed.nonce).map_err(|_| "Recover-Datei beschädigt (nonce)")?;
             let ct = b64.decode(&sealed.ciphertext).map_err(|_| "Recover-Datei beschädigt (ciphertext)")?;
+            if nonce.len() != 24 || salt.len() < 8 || salt.len() > 64 {
+                return Err("Recover-Datei beschädigt (nonce/salt)".into());
+            }
             let key = derive_key(pw, &salt)?;
-            let cipher = XChaCha20Poly1305::new((&key).into());
+            let cipher = XChaCha20Poly1305::new((&key.0).into());
             let plain = cipher.decrypt(XNonce::from_slice(&nonce), ct.as_ref()).map_err(|_| "PASSWORD_WRONG".to_string())?;
             return serde_json::from_slice(&plain).map_err(|e| format!("Recover-Datei unlesbar: {e}"));
         }
@@ -316,5 +335,18 @@ mod tests {
         assert_eq!(open(&enc, Some("falsch")).unwrap_err(), "PASSWORD_WRONG");
         assert_eq!(open(&enc, Some("geheim")).unwrap(), k);
         assert!(!String::from_utf8_lossy(&enc).contains("Anna"));
+        // Zwei Versiegelungen: verschiedene Salze und Nonces
+        let enc2 = seal(&k, Some("geheim")).unwrap();
+        assert_ne!(enc, enc2);
+        // Manipulierte Nonce: Fehler statt Absturz
+        let mut v: serde_json::Value = serde_json::from_slice(&enc).unwrap();
+        v["nonce"] = serde_json::Value::String("AAAA".into());
+        assert!(open(&serde_json::to_vec(&v).unwrap(), Some("geheim")).unwrap_err().contains("beschädigt"));
+        // Manipulierter Chiffretext: Authentifizierung schlägt fehl
+        let mut v: serde_json::Value = serde_json::from_slice(&enc).unwrap();
+        let mut ct = base64::engine::general_purpose::STANDARD.decode(v["ciphertext"].as_str().unwrap()).unwrap();
+        ct[0] ^= 1;
+        v["ciphertext"] = serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(ct));
+        assert_eq!(open(&serde_json::to_vec(&v).unwrap(), Some("geheim")).unwrap_err(), "PASSWORD_WRONG");
     }
 }

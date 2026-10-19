@@ -20,6 +20,18 @@ pub struct Store {
     pub placeholders: BTreeMap<String, u32>,
 }
 
+/// Frühere feste Standard-Saat. Wer Saat und Werkzeug kennt, kann Pseudonyme und die
+/// Datumsverschiebung nachrechnen — daher erzeugt die App eine zufällige Saat je Installation.
+pub const LEGACY_DEFAULT_SEED: &str = "anonym";
+
+/// Zufällige Saat (96 Bit aus dem Betriebssystem-Zufall), als 24 Hex-Zeichen.
+pub fn random_seed() -> String {
+    use chacha20poly1305::aead::rand_core::RngCore;
+    let mut b = [0u8; 12];
+    chacha20poly1305::aead::OsRng.fill_bytes(&mut b);
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
 pub fn fnv1a(s: &str) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for b in s.bytes() {
@@ -758,6 +770,14 @@ mod tests {
         assert!(a.postal_code("50667").starts_with("50"));
         let plate = a.plate("K-AB 1234");
         assert!(plate.starts_with("K-"));
+    }
+
+    #[test]
+    fn random_seeds_differ() {
+        let (a, b) = (random_seed(), random_seed());
+        assert_eq!(a.len(), 24);
+        assert_ne!(a, b);
+        assert_ne!(a, LEGACY_DEFAULT_SEED);
     }
 
     #[test]
