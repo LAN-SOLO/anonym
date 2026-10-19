@@ -1,6 +1,6 @@
 [package]
 name = "anonym"
-version = "0.1.0"
+version = "1.0.0"
 description = "anonym — Anonymisieren ohne KI: Wörterbücher, Muster, Prüfziffern"
 edition = "2021"
 license = "MIT"
