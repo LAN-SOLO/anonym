@@ -100,6 +100,9 @@ export interface Decision {
   replacement?: string | null;
   /** Nur UI: stabile Kennung der Fundstelle (Position + Text), um Entscheidungen nach einer neuen Analyse zuzuordnen. */
   key?: string;
+  /** Position + Text der Fundstelle: das Backend ordnet die Entscheidung darüber zu, nicht über die id. */
+  bstart?: number;
+  text?: string;
 }
 
 export interface Analysis {

@@ -173,13 +173,15 @@ pub fn suggest_output_as(path: &Path, out_dir: Option<&Path>, suffix: &str, targ
 /// anwenden, im Ursprungsformat schreiben, Bericht erzeugen.
 pub fn apply_file(path: &Path, rules: &Rules, dicts: &Dictionaries, opts: &Options, decisions: &[Decision], output: &Path) -> Result<Applied, String> {
     let mut p = prepare(path, rules, dicts, opts)?;
-    let by_id: HashMap<u32, &Decision> = decisions.iter().map(|d| (d.id, d)).collect();
+    // Entscheidungen mit Position + Text darüber zuordnen, ältere/ohne Schlüssel über die id
+    let by_key: HashMap<(usize, &str), &Decision> = decisions.iter().filter_map(|d| Some(((d.bstart?, d.text.as_deref()?), d))).collect();
+    let by_id: HashMap<u32, &Decision> = decisions.iter().filter(|d| d.bstart.is_none() || d.text.is_none()).map(|d| (d.id, d)).collect();
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let mut entries: HashMap<(Category, String), (String, u32)> = HashMap::new();
     let mut by_category: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
     let mut rejected = 0u32;
     for f in &p.findings {
-        let d = by_id.get(&f.id);
+        let d = by_key.get(&(f.bstart, f.text.as_str())).or_else(|| by_id.get(&f.id));
         if let Some(d) = d {
             if !d.accept {
                 rejected += 1;
@@ -416,6 +418,23 @@ mod tests {
     }
 
     #[test]
+    fn decisions_follow_position_not_stale_id() {
+        // Oberfläche hat noch die ids einer älteren Analyse: Position + Text entscheiden
+        let path = tmp("stale.csv", "Name;E-Mail\nAnna Berger;anna@example.org\n".as_bytes());
+        let (dicts, rules, opts) = (Dictionaries::builtin(), Rules::default(), Options::default());
+        let a = analyze(&path, &rules, &dicts, &opts).unwrap();
+        let name = a.findings.iter().find(|f| f.category == Category::Person).unwrap();
+        let mail = a.findings.iter().find(|f| f.category == Category::Email).unwrap();
+        // id zeigt (veraltet) auf den Namen, Schlüssel auf die E-Mail
+        let d = Decision { id: name.id, accept: false, bstart: Some(mail.bstart), text: Some(mail.text.clone()), ..Decision::default() };
+        let out = suggest_output(&path, None, "");
+        apply_file(&path, &rules, &dicts, &opts, &[d], &out).unwrap();
+        let result = std::fs::read_to_string(&out).unwrap();
+        assert!(result.contains("anna@example.org"), "{result}");
+        assert!(!result.contains("Berger"), "{result}");
+    }
+
+    #[test]
     fn decisions_and_csv() {
         let path = tmp("kunden.csv", "Kd-Nr;Name;E-Mail;Geb.\n10482;Anna Berger;anna@example.org;02.07.1981\n".as_bytes());
         let dicts = Dictionaries::builtin();
@@ -426,8 +445,10 @@ mod tests {
         let date = a.findings.iter().find(|f| f.category == Category::Date).unwrap();
         let name = a.findings.iter().find(|f| f.category == Category::Person).unwrap();
         let decisions = vec![
-            Decision { id: date.id, accept: false, category: None, replacement: None },
-            Decision { id: name.id, accept: true, category: None, replacement: Some("Max Mustermann".into()) },
+            Decision { id: date.id, accept: false, ..Decision::default() },
+            Decision { id: name.id, replacement: Some("Max Mustermann".into()), ..Decision::default() },
+            // Veraltete id (andere Analyse), aber Position + Text passen nicht: darf nichts treffen
+            Decision { id: 9999, accept: false, bstart: Some(0), text: Some("gibt es nicht".into()), ..Decision::default() },
         ];
         let out = suggest_output(&path, None, "");
         let applied = apply_file(&path, &rules, &dicts, &opts, &decisions, &out).unwrap();

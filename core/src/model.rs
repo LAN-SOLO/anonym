@@ -287,11 +287,17 @@ pub struct Decision {
     pub accept: bool,
     pub category: Option<Category>,
     pub replacement: Option<String>,
+    /// Byte-Position und Text der Fundstelle. Die ids werden bei jeder Analyse neu vergeben;
+    /// sind beide gesetzt, ordnet `apply_file` die Entscheidung darüber zu statt über die id —
+    /// so trifft sie auch dann die richtige Stelle, wenn sich das Regelwerk zwischen Analyse in
+    /// der Oberfläche und Speichern geändert hat.
+    pub bstart: Option<usize>,
+    pub text: Option<String>,
 }
 
 impl Default for Decision {
     fn default() -> Self {
-        Decision { id: 0, accept: true, category: None, replacement: None }
+        Decision { id: 0, accept: true, category: None, replacement: None, bstart: None, text: None }
     }
 }
 

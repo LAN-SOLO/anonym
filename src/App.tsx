@@ -321,7 +321,7 @@ export default function App() {
         }
         const f = findings.find((x) => x.id === id);
         const prev = cur[id] ?? { id, accept: true, category: null, replacement: null };
-        cur[id] = { ...prev, ...patch, id, key: f ? keyOf(f) : prev.key };
+        cur[id] = { ...prev, ...patch, id, key: f ? keyOf(f) : prev.key, bstart: f ? f.bstart : prev.bstart, text: f ? f.text : prev.text };
       }
       return { ...d, [path]: cur };
     });
@@ -363,7 +363,8 @@ export default function App() {
           output = sel;
         }
       }
-      // `key` ist nur für die Oberfläche (Zuordnung nach neuer Analyse)
+      // `key` ist nur für die Oberfläche; bstart + text gehen mit, damit das Backend die
+      // Entscheidung auch dann richtig zuordnet, wenn eine neue Analyse noch läuft (ids veraltet)
       const list = Object.values(decisions[entry.path] ?? {}).map(({ key: _key, ...d }) => d);
       // Verschlüsselte Recover-Datei: Passwort einmal je Sitzung erfragen
       if (settings.writeRecover && settings.encryptRecover && !sessionPw.current) {

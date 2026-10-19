@@ -31,8 +31,9 @@ pub struct Container {
 
 fn re_docx() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    // `w:delText` = gelöschter Text aus „Änderungen verfolgen“ — bleibt im Dokument und muss mit
-    R.get_or_init(|| Regex::new(r"<w:(?:t|delText)(?:\s[^>]*)?>([^<]*)</w:(?:t|delText)>").unwrap())
+    // `w:delText` = gelöschter Text aus „Änderungen verfolgen“ — bleibt im Dokument und muss mit;
+    // `w:instrText` = Feldfunktionen (z. B. `HYPERLINK "mailto:anna@…"`, ältere Dokumente/Serienbriefe)
+    R.get_or_init(|| Regex::new(r"<w:(?:t|delText|instrText|delInstrText)(?:\s[^>]*)?>([^<]*)</w:(?:t|delText|instrText|delInstrText)>").unwrap())
 }
 /// Kommentare in XLSX (klassisch `<t>`, Threaded Comments `<text>`).
 fn re_xlsx_comment() -> &'static Regex {
@@ -56,6 +57,9 @@ fn re_odf_href() -> &'static Regex {
 
 /// Obergrenze je Archiv-Teil (entpackt) — schützt vor ZIP-Bomben.
 pub const MAX_PART_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Obergrenze für alle Textteile eines Dokuments zusammen (entpackt).
+pub const MAX_TOTAL_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Archiv-Eintrag mit Größenbremse lesen (die Größenangabe im ZIP kann lügen).
 pub(crate) fn read_limited(r: &mut impl Read, declared: u64, name: &str) -> Result<Vec<u8>, String> {
@@ -170,10 +174,16 @@ pub fn open(bytes: Vec<u8>, kind: Kind) -> Result<Document, String> {
         return Err("Kein Dokumentinhalt im Archiv gefunden".into());
     }
     let mut parts: Vec<(String, String)> = Vec::new();
+    let mut total = 0u64;
     for name in &names {
         let mut f = archive.by_name(name).map_err(|e| e.to_string())?;
         let size = f.size();
         let s = read_limited_string(&mut f, size, name)?;
+        // Summe aller Textteile begrenzen — viele „kleine“ Bomben-Teile ergäben sonst Gigabytes
+        total += s.len() as u64;
+        if total > MAX_TOTAL_BYTES {
+            return Err(format!("Dokumentinhalt zu groß (entpackt über {} MB)", MAX_TOTAL_BYTES / 1_048_576));
+        }
         parts.push((name.clone(), s));
     }
     let re = match kind {
@@ -497,6 +507,32 @@ pub fn scrub_metadata(name: &str, content: &str) -> Option<String> {
     }
 }
 
+/// Teile, die `scrub_metadata` oder `drop_thumbnail_refs` umschreiben könnten.
+fn may_hold_metadata(name: &str) -> bool {
+    matches!(name, "docProps/core.xml" | "docProps/app.xml" | "meta.xml" | "content.xml" | "styles.xml" | "META-INF/manifest.xml" | "_rels/.rels" | "[Content_Types].xml")
+        || (name.ends_with(".xml") && (name.starts_with("word/") || name.starts_with("xl/comments") || name.starts_with("xl/persons/")))
+}
+
+/// Vorschaubilder der ersten Seite (LibreOffice speichert sie immer, Word mit „Vorschaubild
+/// speichern“) zeigen das Original samt Namen — sie fallen beim Neupacken weg.
+fn is_thumbnail(name: &str) -> bool {
+    name.starts_with("Thumbnails/") || name.starts_with("docProps/thumbnail.")
+}
+
+/// Verweise auf entfernte Vorschaubilder aus Manifest (ODF), Beziehungen und Inhaltstypen
+/// (OOXML) streichen, damit Word/LibreOffice keine fehlende Datei melden.
+fn drop_thumbnail_refs(name: &str, content: &str) -> Option<String> {
+    static R: OnceLock<Regex> = OnceLock::new();
+    if !matches!(name, "META-INF/manifest.xml" | "_rels/.rels" | "[Content_Types].xml") {
+        return None;
+    }
+    let re = R.get_or_init(|| Regex::new(r#"<(?:manifest:file-entry|Relationship|Override)\b[^>]*="/?(?:Thumbnails/|docProps/thumbnail\.)[^"]*"[^>]*/>"#).unwrap());
+    match re.replace_all(content, "") {
+        std::borrow::Cow::Owned(s) => Some(s),
+        _ => None,
+    }
+}
+
 /// Neuen virtuellen Text (Zeile je Knoten) in die XML-Teile schreiben und das Archiv neu packen.
 pub fn rebuild(c: &Container, old_text: &str, new_text: &str) -> Result<Vec<u8>, String> {
     let old_lines: Vec<&str> = old_text.split('\n').collect();
@@ -533,20 +569,36 @@ pub fn rebuild(c: &Container, old_text: &str, new_text: &str) -> Result<Vec<u8>,
             let mut f = archive.by_index(i).map_err(|e| e.to_string())?;
             let name = f.name().to_string();
             let is_dir = f.is_dir();
+            if is_thumbnail(&name) {
+                continue;
+            }
             let method = if name == "mimetype" { CompressionMethod::Stored } else { CompressionMethod::Deflated };
             let opts = SimpleFileOptions::default().compression_method(method).last_modified_time(f.last_modified().unwrap_or_default());
             if is_dir {
                 writer.add_directory(name, opts).map_err(|e| e.to_string())?;
                 continue;
             }
+            let part_index = c.parts.iter().position(|(n, _)| *n == name);
+            if part_index.is_none() && name != "mimetype" && !may_hold_metadata(&name) {
+                // Unberührte Teile (Bilder, Stile …) komprimiert übernehmen: kein Entpacken,
+                // Ausgabe bleibt so groß wie die Eingabe (ZIP-Bomben laufen nicht voll)
+                writer.raw_copy_file(f).map_err(|e| e.to_string())?;
+                continue;
+            }
             writer.start_file(name.clone(), opts).map_err(|e| e.to_string())?;
-            if let Some(pi) = c.parts.iter().position(|(n, _)| *n == name) {
+            if let Some(pi) = part_index {
                 writer.write_all(contents[pi].as_bytes()).map_err(|e| e.to_string())?;
             } else {
                 let size = f.size();
                 let buf = read_limited(&mut f, size, &name)?;
-                // Metadaten (Autor, Firma, Personen) in Teilen ohne Textknoten leeren
-                match std::str::from_utf8(&buf).ok().and_then(|s| scrub_metadata(&name, s)) {
+                // Metadaten (Autor, Firma, Personen) in Teilen ohne Textknoten leeren,
+                // Verweise auf entfernte Vorschaubilder streichen
+                let clean = std::str::from_utf8(&buf).ok().and_then(|s| {
+                    let meta = scrub_metadata(&name, s);
+                    let base = meta.as_deref().unwrap_or(s);
+                    drop_thumbnail_refs(&name, base).or(meta)
+                });
+                match clean {
                     Some(clean) => writer.write_all(clean.as_bytes()).map_err(|e| e.to_string())?,
                     None => writer.write_all(&buf).map_err(|e| e.to_string())?,
                 }
@@ -731,6 +783,35 @@ mod tests {
         assert!(part_of(&out, "styles.xml").contains("Kopf: Paula Vogt"));
         let m = part_of(&out, "meta.xml");
         assert!(!m.contains("Stefan") && m.contains("LibreOffice"), "{m}");
+    }
+
+    #[test]
+    fn thumbnails_and_field_codes_do_not_survive() {
+        let doc = "<w:document><w:body><w:p><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> HYPERLINK \"mailto:anna.berger@example.org\" </w:instrText></w:r><w:r><w:t>Mail</w:t></w:r></w:p></w:body></w:document>";
+        let rels = "<Relationships><Relationship Id=\"rId1\" Type=\"x/officeDocument\" Target=\"word/document.xml\"/><Relationship Id=\"rId2\" Type=\"x/thumbnail\" Target=\"docProps/thumbnail.jpeg\"/></Relationships>";
+        let types = "<Types><Default Extension=\"jpeg\" ContentType=\"image/jpeg\"/><Override PartName=\"/docProps/thumbnail.jpeg\" ContentType=\"image/jpeg\"/><Override PartName=\"/word/document.xml\" ContentType=\"x\"/></Types>";
+        let bytes = zip_of(&[("[Content_Types].xml", types), ("_rels/.rels", rels), ("word/document.xml", doc), ("docProps/thumbnail.jpeg", "JPEG Anna Berger")]);
+        let d = open(bytes, Kind::Docx).unwrap();
+        assert!(d.text.contains("mailto:anna.berger@example.org"), "{}", d.text);
+        let out = rebuild(d.xml.as_ref().unwrap(), &d.text, &d.text.replace("anna.berger", "paula.vogt")).unwrap();
+        let mut a = ZipArchive::new(Cursor::new(out.as_slice())).unwrap();
+        assert!(a.by_name("docProps/thumbnail.jpeg").is_err());
+        drop(a);
+        assert!(part_of(&out, "word/document.xml").contains("mailto:paula.vogt@example.org"));
+        let r = part_of(&out, "_rels/.rels");
+        assert!(!r.contains("thumbnail") && r.contains("word/document.xml"), "{r}");
+        let t = part_of(&out, "[Content_Types].xml");
+        assert!(!t.contains("thumbnail") && t.contains("/word/document.xml") && t.contains("Extension=\"jpeg\""), "{t}");
+        // ODF: Thumbnails/ samt Manifest-Eintrag
+        let manifest = "<manifest:manifest><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"x\"/><manifest:file-entry manifest:full-path=\"Thumbnails/thumbnail.png\" manifest:media-type=\"image/png\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>";
+        let bytes = zip_of(&[("mimetype", "application/vnd.oasis.opendocument.text"), ("content.xml", "<office:document-content><text:p>Hallo</text:p></office:document-content>"), ("Thumbnails/thumbnail.png", "PNG"), ("META-INF/manifest.xml", manifest)]);
+        let d = open(bytes, Kind::Odf).unwrap();
+        let out = rebuild(d.xml.as_ref().unwrap(), &d.text, &d.text).unwrap();
+        let mut a = ZipArchive::new(Cursor::new(out.as_slice())).unwrap();
+        assert!(a.by_name("Thumbnails/thumbnail.png").is_err());
+        drop(a);
+        let m = part_of(&out, "META-INF/manifest.xml");
+        assert!(!m.contains("Thumbnails") && m.contains("content.xml"), "{m}");
     }
 
     #[test]
