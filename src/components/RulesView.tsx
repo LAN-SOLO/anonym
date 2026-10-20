@@ -21,7 +21,7 @@ export function RulesView({
   t: Dict;
   onChange: (r: Rules) => void;
   onConfirm: (text: string, ok?: string) => Promise<boolean>;
-  onToast: (msg: string) => void;
+  onToast: (msg: string, long?: boolean) => void;
   onFail: (e: unknown) => void;
 }) {
   const [allow, setAllow] = useState(rules.allowlist.join('\n'));
@@ -41,12 +41,17 @@ export function RulesView({
   const importRules = async () => {
     const sel = await open({ multiple: false, filters: [{ name: t.rulesFile, extensions: ['json'] }] });
     if (typeof sel !== 'string') return;
+    const before = rules.seed;
+    const info = await api.storeInfo().catch(() => null);
     api
       .importRules(sel)
       .then((r) => {
         onChange(r);
         setAllow(r.allowlist.join('\n'));
-        onToast(t.rulesImported);
+        setSeedDraft(null);
+        // Andere Saat: gefüllter Speicher passt nicht mehr — sagen statt still leeren
+        if (info && info.entries > 0 && r.seed !== before) onToast(t.rulesImportedNewSeed(info.entries), true);
+        else onToast(t.rulesImported);
       })
       .catch(onFail);
   };
@@ -59,7 +64,9 @@ export function RulesView({
       .catch(onFail);
   };
   const reset = async () => {
-    if (!(await onConfirm(t.rulesResetConfirm, t.rulesReset))) return;
+    const info = await api.storeInfo().catch(() => null);
+    if (!(await onConfirm(t.rulesResetConfirm + (info && info.entries > 0 ? t.rulesResetStore(info.entries) : ''), t.rulesReset))) return;
+    setSeedDraft(null);
     api
       .defaultRules()
       .then((r) => {

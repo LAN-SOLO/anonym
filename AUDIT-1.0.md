@@ -97,7 +97,8 @@ auch unter Windows (Tests nutzen `temp_dir()` und vergleichen nur Dateinamen).
 - DOCX: Ein über zwei Formatierungsläufe verteilter Name erscheint geteilt.
 - Ändert man die Saat, wird ein vorhandener Pseudonym-Speicher beim nächsten Speichern geleert
   (dokumentiert; „Neu“ fragt seit Runde 2, Tippen ins Saat-Feld seit Runde 3 bei gefülltem Speicher nach;
-  ein geladenes Regelwerk oder „Auf Standard zurücksetzen“ fragt dazu nicht eigens).
+  „Auf Standard zurücksetzen“ nennt den Speicher in der Rückfrage, ein geladenes Regelwerk mit anderer
+  Saat zeigt danach einen Hinweis — laden lässt es sich ohne Rückfrage, weil die Saat erst nach dem Lesen bekannt ist).
 - Unbekannte Betriebssystem-Fehler behalten die Systemmeldung (unter Windows in der Sprache des Systems);
   technische Details hinter einer übersetzten Meldung (serde, zip, HTTP) bleiben englisch.
 - Linux-Builds entstehen in der CI, wurden hier nicht betrachtet.
@@ -404,9 +405,11 @@ jetzt in eine „Festplatte“ (sessionStorage), die einen Neustart übersteht, 
 10. Wiederherstellen: bearbeitete Datei wählen → Recover-Datei daneben vorgeschlagen
    (`brief.anonym.recover.json`), verschlüsselt → Passwortfeld (mit Sitzungs-Passwort vorbelegt),
    falsches Passwort → „Falsches Passwort.“, richtiges → Ergebnis, Ziel `brief.recovered.txt` (`recoverFlow`).
-11. Regelwerk (Muster entfernen, Zurücksetzen), Einstellungen alle Reiter, Update-Fehler,
+11. Regelwerk mit anderer Saat laden bei gefülltem Speicher → Hinweis mit Anzahl; Zurücksetzen-Rückfrage
+   nennt den Speicher (`importSeed`).
+12. Regelwerk (Muster entfernen, Zurücksetzen), Einstellungen alle Reiter, Update-Fehler,
    Wiederherstellen-Fehler, Handbuch-Kürzel (Bestand).
-Ergebnis: 24 Schritte × 4 = 96 grün, kein Überlauf bei 960×620, keine fremdsprachigen Texte, keine
+Ergebnis: 25 Schritte × 4 = 100 grün, kein Überlauf bei 960×620, keine fremdsprachigen Texte, keine
 Seitenfehler. Gegenprobe: dieselben neuen Schritte gegen den Stand `053d72f` → `seedTyping`,
 `storeClear`, `escPassword`, `helpKeys`, `restartCheck` rot (`helpKeys` dort nur über „R“ groß;
  die Sperre hinter dem Handbuch ist in dieser Gegenprobe nicht sauber getrennt nachgewiesen, weil der
@@ -421,15 +424,16 @@ Seitenfehler. Gegenprobe: dieselben neuen Schritte gegen den Stand `053d72f` →
 | `cargo check --target x86_64-pc-windows-msvc --workspace --tests` (vom Mac, ohne Linken) | grün |
 | `cargo clippy --workspace --tests` | nur vorbestehende Stilhinweise (keiner in geänderten Zeilen) |
 | `cargo audit` | keine Schwachstelle im Code von anonym; zip-`extract()`-Advisories wie in Runde 2; neu nur „unmaintained“ für `zvariant`/`zvariant_derive` (RUSTSEC-2026-0370…0372, Linux-D-Bus-Unterbau) |
-| UI-Szenario (s. o.) | 96/96 grün |
+| UI-Szenario (s. o.) | 100/100 grün |
 
 **Bekannt, nicht geändert**
 - `apply_file` schreibt Ausgabe → Speicher → Bericht → Recover-Datei nacheinander. Scheitert ein
   späterer Schritt (z. B. Datenträger läuft genau dann voll), liegt die Ausgabe schon da, die
   Recover-Datei fehlt; die Meldung erscheint, erneutes Speichern behebt es. Keine Transaktion über
   mehrere Dateien.
-- Ein geladenes Regelwerk oder „Auf Standard zurücksetzen“ mit anderer Saat leert den Speicher beim
-  nächsten Speichern ohne eigene Rückfrage (Handbuch nennt es; „Zurücksetzen“ fragt ohnehin).
+- Ein geladenes Regelwerk mit anderer Saat wird ohne Rückfrage übernommen (das Backend speichert es
+  beim Laden); danach erscheint ein Hinweis, dass der gefüllte Speicher beim nächsten Speichern neu
+  beginnt. Die Rückfrage zu „Auf Standard zurücksetzen“ nennt den Speicher jetzt (`importSeed`).
 - Export in ein anderes Format schreibt die Recover-Datei `<name>.anonym.recover.json` — bei
   gleichem Stamm dieselbe wie beim Speichern im Ursprungsformat (Inhalt gleich, solange Regelwerk
   und Entscheidungen gleich sind).
