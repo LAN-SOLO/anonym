@@ -1,6 +1,6 @@
 # anonym. 1.0 — Audit (Funktion & Sicherheit)
 
-Stand: 2026-10-20 (Runde 2) · Basis Runde 1 `5126f76`, Runde 2 `a49da59` · Version 1.0.0 (Test-Build für macOS und Windows)
+Stand: 2026-10-20 (Runde 3) · Basis Runde 1 `5126f76`, Runde 2 `a49da59`, Runde 3 `053d72f` · Version 1.0.0 (Test-Build für macOS und Windows)
 
 „Getestet“ heißt hier: tatsächlich ausgeführt — Rust-Unit-/Integrationstest, CLI-Lauf oder die
 Web-Oberfläche in headless Chrome gegen eine Mock-IPC-Schicht. „Statisch geprüft“ heißt: Code
@@ -96,7 +96,8 @@ auch unter Windows (Tests nutzen `temp_dir()` und vergleichen nur Dateinamen).
   Excel-Blättern, Bilder, eingebettete Objekte, `docProps/custom.xml`.
 - DOCX: Ein über zwei Formatierungsläufe verteilter Name erscheint geteilt.
 - Ändert man die Saat, wird ein vorhandener Pseudonym-Speicher beim nächsten Speichern geleert
-  (dokumentiert; „Neu“ fragt seit Runde 2 bei gefülltem Speicher nach, Tippen ins Saat-Feld nicht).
+  (dokumentiert; „Neu“ fragt seit Runde 2, Tippen ins Saat-Feld seit Runde 3 bei gefülltem Speicher nach;
+  ein geladenes Regelwerk oder „Auf Standard zurücksetzen“ fragt dazu nicht eigens).
 - Unbekannte Betriebssystem-Fehler behalten die Systemmeldung (unter Windows in der Sprache des Systems);
   technische Details hinter einer übersetzten Meldung (serde, zip, HTTP) bleiben englisch.
 - Linux-Builds entstehen in der CI, wurden hier nicht betrachtet.
@@ -309,3 +310,123 @@ Stellen nachgesehen, die Runde 2 nicht genannt hat.
 
 **Nur auf echter Hardware prüfbar**: unverändert die Listen oben (Runde 2 und Manuelle Testliste),
 zusätzlich: `settings.json` im Windows-Editor speichern → Einstellungen bleiben erhalten.
+
+## Runde 3 (2026-10-20)
+
+Basis `053d72f`. Auftrag: jede Aussage aus Handbuch (DE/EN), README und den Texten der Oberfläche
+gegen den Code prüfen, Abläufe Ende-zu-Ende durchspielen, Reste aus Runde 2 schließen.
+Vorgehen: Aussagen-Liste aus `Help.tsx` (Tutorial + 11 Abschnitte, DE und EN getrennt gelesen),
+README und `i18n.ts` (Hinweise, Rückfragen); jede gegen die Stelle im Code, wo möglich per
+CLI-Lauf (`anonym-cli` mit Prüftexten, Pfad mit Leerzeichen und Umlaut) oder UI-Szenario.
+
+**Falsche Aussagen — Code behoben**
+- „Telefon: Vorwahl bleibt“ (Handbuch, README): stimmte nur national. `+49 160 95929195` (auch die
+  Nummer auf lan-solo.com) wurde **gar nicht erkannt** — das Muster verlangte eine Vorwahl mit 0.
+  Bei `+49 (0)221 47110` und `0049 221 4711` wurde die Ortsvorwahl ersetzt. Muster und Ersatz
+  korrigiert; Tests `international_phone_numbers`, `numbers_keep_checksums` (erweitert).
+  Gegenprobe ohne neue Fehltreffer: `+5 EUR`, `+2.1`, `+1500`, ISBN.
+- „IPv4/IPv6“ (Handbuch): verkürzte IPv6-Adressen mit `::` wurden nicht (`2001:db8::8a2e:370:7334`)
+  oder nur ab der Mitte erkannt (`fe80::1ff:…` → nur `1ff:fe23:4567:890a`, `fe80::` blieb stehen).
+  Test `ipv6_full_and_compressed` (inkl. „12:30“/„12::30“ ohne Treffer).
+- Verschlüsselung der Recover-Datei („wer das Passwort verliert, kann nicht mehr zurückübersetzen“):
+  Der Bericht daneben stand weiter im Klartext mit allen Originalwerten — die Verschlüsselung schützte
+  praktisch nichts. Bei verschlüsselter Recover-Datei bleibt `original` in der Berichtsdatei jetzt leer
+  (Ersatz, Anzahl, Kategorien bleiben); der Reiter „Bericht“ zeigt die Werte in der Sitzung weiter.
+  Test `encrypted_recover_keeps_originals_out_of_report_file`.
+- „Esc — Dialog schließen“: Stand der Fokus in einem Eingabefeld (Passwortabfrage hat Autofokus,
+  Einstellungen), passierte nichts. Eine Rückfrage über den Einstellungen („Speicher löschen“) schloss
+  mit Esc beide und verwarf ungespeicherte Einstellungen. Jetzt schließt Esc immer genau den obersten Dialog.
+- Tastenkürzel liefen hinter dem offenen Handbuch weiter (O öffnete den Dateidialog, R den
+  Wiederherstellen-Dialog). Jetzt gesperrt, solange Handbuch/Tutorial offen sind; Groß-/Kleinschreibung
+  egal (Feststelltaste).
+
+**Falsche Aussagen — Text korrigiert (DE + EN)**
+- „Speicher löschen macht aus Pseudonymisierung Anonymisierung“ (Handbuch, Einstellungen): Recover-
+  Dateien und Berichte (Standard: an) enthalten die Originale weiter. Jetzt: anonymisiert erst, wenn
+  auch diese gelöscht sind.
+- Rückfrage „Speicher löschen? Danach lassen sich bisherige Ausgaben nicht mehr zurückübersetzen“:
+  falsch — die Rückübersetzung läuft nur über Recover-Dateien, nicht über den Speicher. Neuer Text.
+- Tutorial „Alte Exporte (Windows-1252, ISO-8859) werden erkannt“: es gibt keine Erkennung, nur die
+  eingestellte Rückfall-Codepage. „Prüft nur die Textknoten“: XLSX-Zahlenzellen typisierter Spalten
+  werden auch ersetzt, Metadaten und Vorschaubild entfernt.
+- „Existiert die Ausgabe schon, fragt anonym“: nur beim direkten Speichern (abschaltbar); im
+  Dateidialog („Speichern unter“, „Exportieren“) fragt das System.
+- Grenzen: Kontext-Treffer haben 70 %, nicht 65 % (`best_conf.max(70)`).
+
+**Reste aus Runde 2 — behoben**
+- Saat von Hand: wird erst beim Verlassen des Felds oder mit Enter übernommen (vorher jeder
+  Tastendruck nach 600 ms) und fragt bei gefülltem Pseudonym-Speicher wie „Neu“; Abbrechen oder
+  ein leeres Feld stellt die bisherige Saat wieder her, Esc im Feld verwirft die Eingabe.
+- „Speicher löschen“ analysiert offene Dateien neu (und rechnet Kategorie-Vorschauen neu) —
+  angezeigte Pseudonyme stammen nicht mehr aus dem gelöschten Speicher.
+
+**Bestätigt ohne Befund** (Code gelesen, per CLI ausgeführt): Wörterbuch-Größen (625 Vornamen,
+477 Nachnamen), Prioritäten-Reihenfolge, Datumsformate (14.03.2024, 2024-03-14, 3/14/2024,
+14. März 2024, March 14, 2024) und Verschiebung ±1…45 Tage, Genus und Familien-Nachname, E-Mail aus
+Pseudonym bzw. Name+Zahl, IBAN/Karte/Steuer-ID/SV-Nr. mit gültiger Prüfziffer und den genannten
+festen Teilen, ungültige 11-stellige Zahl ≠ Steuer-ID, Kennzeichen, PLZ (erste zwei Ziffern),
+Kunden-/Aktenzeichen, mehrdeutige Vornamen („Frank“, „Mai“) allein ohne Treffer, CSV-Kopfzeile
+typisiert unbekannte Nachnamen, Ausnahmeliste ohne Groß/Klein, Strategien (Zähler je Original,
+Länge erhalten, letzte n sichtbar), Codepage-Liste, Dateinamen von Bericht/Recover/Wiederherstellung,
+Endungsliste Frontend = Kern, Kürzel-Liste, „+ Datei“, Fundstellen-Zahl in der Seitenleiste,
+„Alle speichern“ nur masked.
+
+**Ende-zu-Ende-Abläufe** (UI-Szenario, headless Chromium, Mock-IPC mit plugin-dialog-2.7-Verhalten,
+je DE/EN × dunkel/hell × macOS/Windows-User-Agent; die Mock-IPC schreibt Regelwerk/Einstellungen
+jetzt in eine „Festplatte“ (sessionStorage), die einen Neustart übersteht, und verlangt wie
+`apply_file` ein Passwort bei verschlüsselter Recover-Datei)
+1. Erststart → Datei öffnen → Fundstellen → Kategoriewechsel → Vorschau → Speichern → Bericht (Bestand).
+2. Abgebrochener Dateidialog bei Öffnen, „Speichern unter“ und „Exportieren“: keine Analyse, kein
+   Schreiben, kein Fehler-Toast (`cancelDialog`).
+3. Speichern bei vollem Datenträger, schreibgeschütztem Ordner (Zugriff verweigert), schreibgeschütztem
+   Laufwerk, gesperrter Datei (Windows-Konfiguration): Meldung in der UI-Sprache (`diskErrors`, `save`).
+   Zusätzlich echt auf macOS: `write_bytes` in einen Ordner mit Rechten 555 → „Zugriff verweigert“,
+   keine Temp-Datei (Test `read_only_folder_gives_stable_error_and_no_temp`).
+4. Saat tippen: kein Schreiben während des Tippens, Rückfrage beim Verlassen, Abbrechen stellt
+   zurück, OK schreibt, leer stellt zurück (`seedTyping`).
+5. „Speicher löschen“: Esc auf der Rückfrage lässt die Einstellungen offen, OK leert und analysiert
+   neu (`storeClear`).
+6. Verschlüsselung an → Speichern → Passwortabfrage, Esc aus dem Feld bricht ab (kein Schreiben);
+   abweichende Wiederholung sperrt „Weiter“, gleiche schreibt mit Passwort (`escPassword`).
+7. Handbuch offen: R/O/3 ohne Wirkung, Esc schließt, danach „R“ (groß) öffnet Wiederherstellen (`helpKeys`).
+8. Neustart mitten in der Arbeit: Regelwerk-Name geändert, Seite neu geladen → Name, Saat, Sprache,
+   Thema bleiben, Tutorial erscheint nicht erneut (`restartPrep`/`restartCheck`).
+9. Regelwerk (Muster entfernen, Zurücksetzen), Einstellungen alle Reiter, Update-Fehler,
+   Wiederherstellen-Fehler, Handbuch-Kürzel (Bestand).
+Ergebnis: 22 Schritte × 4 = 88 grün, kein Überlauf bei 960×620, keine fremdsprachigen Texte, keine
+Seitenfehler. Gegenprobe: dieselben neuen Schritte gegen den Stand `053d72f` → `seedTyping`,
+`storeClear`, `escPassword`, `helpKeys`, `restartCheck` rot (`helpKeys` dort nur über „R“ groß;
+ die Sperre hinter dem Handbuch ist in dieser Gegenprobe nicht sauber getrennt nachgewiesen, weil der
+ vorige Schritt einen Dialog offen ließ).
+
+**Ausgeführt**
+| Befehl | Ergebnis |
+| --- | --- |
+| `cargo test --workspace` | 53 grün (Kern 48, App 5) |
+| `pnpm test` | 4 grün |
+| `pnpm build` | grün |
+| `cargo check --target x86_64-pc-windows-msvc --workspace --tests` (vom Mac, ohne Linken) | grün |
+| `cargo clippy --workspace --tests` | nur vorbestehende Stilhinweise (keiner in geänderten Zeilen) |
+| `cargo audit` | keine Schwachstelle im Code von anonym; zip-`extract()`-Advisories wie in Runde 2; neu nur „unmaintained“ für `zvariant`/`zvariant_derive` (RUSTSEC-2026-0370…0372, Linux-D-Bus-Unterbau) |
+| UI-Szenario (s. o.) | 88/88 grün |
+
+**Bekannt, nicht geändert**
+- `apply_file` schreibt Ausgabe → Speicher → Bericht → Recover-Datei nacheinander. Scheitert ein
+  späterer Schritt (z. B. Datenträger läuft genau dann voll), liegt die Ausgabe schon da, die
+  Recover-Datei fehlt; die Meldung erscheint, erneutes Speichern behebt es. Keine Transaktion über
+  mehrere Dateien.
+- Ein geladenes Regelwerk oder „Auf Standard zurücksetzen“ mit anderer Saat leert den Speicher beim
+  nächsten Speichern ohne eigene Rückfrage (Handbuch nennt es; „Zurücksetzen“ fragt ohnehin).
+- Export in ein anderes Format schreibt die Recover-Datei `<name>.anonym.recover.json` — bei
+  gleichem Stamm dieselbe wie beim Speichern im Ursprungsformat (Inhalt gleich, solange Regelwerk
+  und Entscheidungen gleich sind).
+- Ein englischer Straßenname wird in der Namenswelt „deutsch“ zu „32 Brunnenstraße“ (Hausnummer vorn).
+
+**Nur auf echter Hardware prüfbar** (zusätzlich zu den Listen oben)
+- macOS und Windows: Esc in der Passwortabfrage und in den Einstellungen; Esc auf einer Rückfrage
+  über den Einstellungen schließt nur die Rückfrage.
+- Windows: schreibgeschützter Ordner/Datei (Eigenschaften → Schreibgeschützt) und volles Laufwerk
+  (USB-Stick) → übersetzte Meldung, keine `.anonym-tmp`-Reste. Der Unix-Test deckt Windows nicht ab.
+- Native Speichern-Dialoge fragen beim Überschreiben selbst (macOS NSSavePanel, Windows IFileSaveDialog) —
+  einmal je Plattform bestätigen.
+- Verschlüsselte Recover-Datei an → `<name>.anonym.report.json` im Editor öffnen: Feld `original` leer.

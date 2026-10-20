@@ -61,7 +61,8 @@ fn patterns() -> &'static Patterns {
         // International (+49 160 …, +49 (0)221 …) ohne führende 0 der Vorwahl, sonst national (0221 …, (0221) …)
         phone: Regex::new(r"(?:\+\d{1,3}[ .-]?(?:\(0\)[ ]?)?(?:\(\d{1,5}\)|\d{1,5})|\(0?\d{1,5}\)|0\d{1,5})[ ./-]?\d{2,8}(?:[ ./-]\d{1,8}){0,4}(?:-\d{1,3})?").unwrap(),
         ipv4: Regex::new(r"\b(?:\d{1,3}\.){3}\d{1,3}\b").unwrap(),
-        ipv6: Regex::new(r"\b(?:[0-9a-fA-F]{1,4}:){3,7}[0-9a-fA-F]{1,4}\b").unwrap(),
+        // Voll (4–8 Gruppen) oder mit „::“ verkürzt (fe80::1ff:fe23:4567:890a, 2001:db8::8a2e:370:7334)
+        ipv6: Regex::new(r"\b(?:(?:[0-9a-fA-F]{1,4}:){1,6}(?::[0-9a-fA-F]{1,4}){1,6}|(?:[0-9a-fA-F]{1,4}:){3,7}[0-9a-fA-F]{1,4})\b").unwrap(),
         plate: Regex::new(r"\b[A-ZÄÖÜ]{1,3}-[A-Z]{1,2}[ ]?\d{1,4}[EH]?\b").unwrap(),
         tax_id: Regex::new(r"\b\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{3}\b").unwrap(),
         vat_id: Regex::new(r"\bDE[ ]?\d{9}\b").unwrap(),
@@ -695,6 +696,19 @@ mod tests {
             assert!(found.contains(&(Category::Phone, p.into())), "{p}: {found:?}");
         }
         assert!(found.contains(&(Category::Date, "02.07.1981".into())), "{found:?}");
+    }
+
+    #[test]
+    fn ipv6_full_and_compressed() {
+        // Runde 3: „::“-Formen wurden nicht oder nur ab der Mitte erkannt
+        let found = run("Server fe80::1ff:fe23:4567:890a, 2001:db8::8a2e:370:7334 und 2001:0db8:85a3:0000:0000:8a2e:0370:7334. Beginn 12:30, Ende 12::30.");
+        for ip in ["fe80::1ff:fe23:4567:890a", "2001:db8::8a2e:370:7334", "2001:0db8:85a3:0000:0000:8a2e:0370:7334"] {
+            assert!(found.contains(&(Category::Ip, ip.into())), "{ip}: {found:?}");
+        }
+        assert_eq!(found.iter().filter(|f| f.0 == Category::Ip).count(), 3, "{found:?}");
+        let mut p = crate::pseudo::Pseudonymizer::new(crate::World::builtin("de"), "t", 0, None);
+        let r = p.ip("2001:db8::8a2e:370:7334");
+        assert!(r.starts_with("2001:db8::") && r != "2001:db8::8a2e:370:7334", "{r}");
     }
 
     #[test]
