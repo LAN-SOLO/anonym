@@ -7,7 +7,7 @@ Anonymisieren ohne KI — Wörterbücher, Muster, Prüfziffern. Lokal, ohne Kont
   Kennzeichen, IP-Adressen, Kunden-/Aktenzeichen — per Wörterbuch, Muster, Prüfziffer (Mod 97, Luhn,
   Mod 11,10), Kontext (Anrede, Beschriftung) und Tabellenspalten (Kopfzeile, feste Spaltenbreiten).
 - **Ersetzung:** stimmig statt geschwärzt — anderer Name mit gleichem Genus, Familien behalten den
-  Nachnamen, IBAN mit gültiger Prüfziffer und gleicher Bank, Telefon mit gleicher Vorwahl (auch international, `+49 160 …`), Datum um
+  Nachnamen, IBAN mit gültiger Prüfziffer und gleicher Bank, Telefon mit gleicher Vorwahl (auch international, `+49 160 …`; Zahlen wie `+12.500.000` gelten nicht als Telefon), USt-IdNr. mit gültiger Prüfziffer, Datum um
   denselben Betrag verschoben. Alternativ Platzhalter `[PERSON 3]`, Schwärzen, Maskieren, Löschen.
 - **Deterministisch:** gleiche Saat + gleiche Datei = gleiche Ausgabe. Keine KI. Die Saat wird je
   Installation zufällig erzeugt und wirkt wie ein Schlüssel — ohne sie lassen sich Pseudonyme nicht nachrechnen.

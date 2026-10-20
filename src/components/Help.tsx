@@ -193,7 +193,7 @@ const de: Content = {
         '• Wortweise: Ersatzwerte werden als ganze Wörter gesucht, längste zuerst, ohne Rücksicht auf Groß-/Kleinschreibung; die Schreibweise der Fundstelle bleibt (RADEMACHER → BERGER). Ein allein weiterverwendeter Nachname findet über die Namensteile zurück.',
         '• Nicht umkehrbar: Schwärzungen, Maskierungen und gelöschte Stellen — und Platzhalter, wenn derselbe Text für verschiedene Originale stand. Solche Ersatzwerte werden als „mehrdeutig“ übersprungen.',
         '• Passwort: In Einstellungen → Dateien lassen sich Recover-Dateien verschlüsseln (XChaCha20-Poly1305, Schlüssel per Argon2id). Das Passwort wird je Sitzung einmal abgefragt — zweimal einzugeben, gegen Tippfehler — und nie gespeichert. Ohne Passwort ist die Recover-Datei Klartext — behandeln Sie sie wie das Original. Ist die Verschlüsselung an, schreibt anonym die Originalwerte auch nicht in den Bericht daneben.',
-        '• Rechtlich: Solange eine Recover-Datei existiert, ist die Ausgabe pseudonymisiert, nicht anonymisiert. Wer die Recover-Datei löscht, macht daraus eine Anonymisierung.',
+        '• Rechtlich: Solange eine Recover-Datei existiert, ist die Ausgabe pseudonymisiert, nicht anonymisiert. Anonymisiert ist sie erst, wenn auch der Bericht (enthält ohne Verschlüsselung die Originalwerte) und der Pseudonym-Speicher gelöscht sind.',
       ],
     },
     {
@@ -215,6 +215,7 @@ const de: Content = {
         '• Ein Vorname, der auch ein Wort ist („Mai“, „August“ als Monat), wird nur mit Nachname oder Anrede gezählt.',
         '• Excel-Zahlenzellen ohne typisierte Kopfzeile, Blattnamen, Kopf-/Fußzeilen von Excel-Blättern, Bilder, eingebettete Objekte und benutzerdefinierte Dokument-Eigenschaften (docProps/custom.xml) werden nicht geprüft.',
         '• Freitext hinter Namen („Anna Möbelhaus“) kann fälschlich als Nachname gelten — die Quelle „Kontext“ mit Konfidenz 70 % markiert solche Fälle; ein Klick lehnt ab.',
+        '• Eine internationale Nummer, die nach der Ländervorwahl nur aus Dreiergruppen mit Punkten besteht („+49.221.471.100“), sieht aus wie eine Zahl mit Tausenderpunkten und wird nicht als Telefon gemeldet — ebenso mit Leerzeichen bei weniger als neun Ziffern. Ergänzen Sie bei Bedarf ein eigenes Muster.',
       ],
     },
     {
@@ -236,6 +237,8 @@ const de: Content = {
         '• Verschlüsselte Recover-Datei: der Bericht daneben enthält keine Originalwerte mehr.',
         '• „Alle speichern“ nennt bei fehlgeschlagenen Dateien den Grund, statt ihn mit der Erfolgsmeldung zu überdecken.',
         '• Esc schließt Dialoge auch aus einem Eingabefeld heraus und nur den obersten; bei offenem Handbuch lösen Tasten keine Aktionen dahinter aus.',
+        '• Zahlen mit Vorzeichen und Tausendergruppen („+12.500.000“, „+1 250 000“) gelten nicht mehr als Telefonnummer; die USt-IdNr. bekommt eine gültige Prüfziffer.',
+        `• ${modKey('de')} + , bei schon offenen Einstellungen oder über einem anderen Dialog öffnet nichts erneut — ungespeicherte Änderungen lassen sich weiter mit Esc verwerfen.`,
       ],
     },
     {
@@ -404,7 +407,7 @@ const en: Content = {
         '• Word by word: substitutes are searched as whole words, longest first, ignoring case; the spelling of the occurrence is kept (RADEMACHER → BERGER). A surname reused on its own finds its way back via the name parts.',
         '• Not reversible: redactions, masks and deleted places — and placeholders when the same text stood for different originals. Such substitutes are skipped as “ambiguous”.',
         '• Password: under Settings → Files recover files can be encrypted (XChaCha20-Poly1305, key via Argon2id). The password is asked once per session — entered twice, against typos — and never stored. Without a password the recover file is plain text — treat it like the original. With encryption on, anonym also leaves the original values out of the report file next to it.',
-        '• Legally: as long as a recover file exists, the output is pseudonymised, not anonymised. Deleting the recover file turns it into anonymisation.',
+        '• Legally: as long as a recover file exists, the output is pseudonymised, not anonymised. It is only anonymised once the report (which holds the original values unless encryption is on) and the pseudonym store are deleted too.',
       ],
     },
     {
@@ -426,6 +429,7 @@ const en: Content = {
         '• A first name that is also a word (“May”, “August” as months) only counts with a surname or salutation.',
         '• Excel numeric cells without a typed header, sheet names, headers/footers of Excel sheets, images, embedded objects and custom document properties (docProps/custom.xml) are not checked.',
         '• Free text after a name (“Anna Furniture”) can be mistaken for a surname — the source “context” with 70 % confidence marks such cases; one click rejects.',
+        '• An international number made only of three-digit groups with dots after the country code (“+49.221.471.100”) looks like a number with thousands separators and is not reported as a phone — likewise with spaces below nine digits. Add a custom pattern if needed.',
       ],
     },
     {
@@ -447,6 +451,8 @@ const en: Content = {
         '• Encrypted recover file: the report next to it no longer contains original values.',
         '• “Save all” names the reason when files fail instead of hiding it behind the success message.',
         '• Esc closes dialogs even from an input field, and only the topmost one; while the manual is open, keys do not trigger actions behind it.',
+        '• Signed numbers with thousands groups (“+12.500.000”, “+1 250 000”) are no longer taken for phone numbers; the VAT ID gets a valid check digit.',
+        `• ${modKey('en')} + , while Settings are already open or behind another dialog opens nothing again — unsaved changes can still be discarded with Esc.`,
       ],
     },
     {

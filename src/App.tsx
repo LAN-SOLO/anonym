@@ -534,7 +534,9 @@ export default function App() {
       const tag = (e.target as HTMLElement)?.tagName;
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
-        if (settings) {
+        // Schon offen (oder ein anderer Dialog davor): nicht erneut öffnen — sonst würde die
+        // Sicherung mit den noch ungespeicherten Änderungen überschrieben und Esc stellt nichts her
+        if (settings && !showSettings && !confirm && !prompt && !showRecover) {
           setSettingsBackup(settings);
           setShowSettings(true);
         }

@@ -447,3 +447,52 @@ Seitenfehler. Gegenprobe: dieselben neuen Schritte gegen den Stand `053d72f` →
 - Native Speichern-Dialoge fragen beim Überschreiben selbst (macOS NSSavePanel, Windows IFileSaveDialog) —
   einmal je Plattform bestätigen.
 - Verschlüsselte Recover-Datei an → `<name>.anonym.report.json` im Editor öffnen: Feld `original` leer.
+
+## Runde 3 – Verifikation (unabhängige Zweitprüfung, 2026-10-20)
+
+Geprüft: Diff `053d72f..f42e17d` (Regex Telefon/IPv6, Bericht ohne Originale, Esc-Logik, Saat-Eingabe,
+„Speicher löschen“, „Alle speichern“, Help/i18n DE+EN), alle Tests selbst neu ausgeführt, zehn weitere
+Handbuch-Aussagen gegen Code und `anonym-cli` (Ordner mit Leerzeichen und Umlaut) geprüft.
+
+**Gefundene und behobene Fehler**
+- Regression aus Runde 3: Die neue internationale Telefon-Alternative erkannte Zahlen mit Vorzeichen
+  und Tausendergruppen als Telefon — `+12.500.000 EUR`, `+1.250.000`, `+1 250 000 Stück` wurden zu
+  „Telefonnummern“ mit neuen Ziffern (vorher kein Treffer, die Regex verlangte eine 0). Jetzt
+  verworfen, wenn nach dem `+` nur Dreiergruppen folgen, getrennt durch Punkt, oder durch Leerzeichen
+  bei unter neun Ziffern (`signed_thousands`, Test `signed_numbers_are_not_phones`). Grenze im
+  Handbuch: `+49.221.471.100` gilt dadurch nicht als Telefon.
+- Handbuch „Steuer-ID / USt-IdNr. … neue Nummer mit gültiger Prüfziffer“: Die USt-IdNr. bekam
+  zufällige Ziffern ohne gültige Prüfziffer (`DE136695976` → `DE933501708`, Mod 11,10 ungültig). Jetzt
+  acht neue Ziffern + Prüfziffer nach ISO 7064 Mod 11,10 (Test in `numbers_keep_checksums`). Nur
+  USt-IdNr.-Pseudonyme ändern sich gegenüber `f42e17d`; vorhandene Speicher-Einträge werden weiterverwendet.
+- `⌘/Strg + ,` bei schon offenen Einstellungen überschrieb die Sicherung mit den ungespeicherten
+  (live angewendeten) Änderungen — Esc/Abbrechen stellte danach nichts mehr her. Öffnet jetzt nur, wenn
+  weder Einstellungen noch ein anderer Dialog offen sind. UI-Schritt `settingsReopen` (Design umstellen,
+  Mod+, , Esc → altes Design): ohne Fix 0/4, mit Fix 4/4.
+- Handbuch „Wiederherstellen“: „Wer die Recover-Datei löscht, macht daraus eine Anonymisierung“
+  widersprach dem in Runde 3 korrigierten Speicher-Abschnitt (Bericht und Speicher enthalten die
+  Originale). DE+EN korrigiert.
+
+**Stichprobe Handbuch (bestätigt)**: Größengrenzen 512 MB / 256 MB je Archiv-Teil / 1 GB gesamt;
+Saat 96 Bit; Kreditkarte erste vier Ziffern bleiben, Luhn gültig (nachgerechnet); PLZ behält zwei
+Ziffern; Kennzeichen behält das Unterscheidungszeichen; Schwärzen/Maskieren/Platzhalter (gleiches
+Original = gleiche Nummer); CSV-Trennzeichen `; , Tab |`; „Frank“ allein kein Treffer; E-Mail lokaler
+Teil aus dem Personen-Pseudonym, Domain bleibt; Wiederherstellen erhält die Schreibweise (`match_case`).
+Widerlegt: USt-IdNr.-Prüfziffer, Recover-Rechtssatz (beide behoben, s. o.).
+
+**Durchgesehen, ohne Änderung**: Esc-Reihenfolge (Rückfrage → Passwort → Wiederherstellen →
+Einstellungen) korrekt; zwei gleichzeitige Rückfragen (Saat tippen, dann „Neu“ klicken) — die zweite
+bricht die erste ab, die Saat bleibt, kein Hänger. Offen, gering: Saat tippen und direkt „Speichern“
+klicken — das Speichern startet mit der bisherigen Saat, die neue greift erst danach (wie vorher mit
+600-ms-Verzögerung). IPv6-Pseudonym bei `fe80::1` behält nur die erste Gruppe plus `::`.
+
+**Tests (selbst ausgeführt)**: `cargo test --workspace` 54 grün (core 49, App 5); `pnpm test` 4 grün;
+`pnpm build` grün; Windows-Typecheck (`cargo check --target x86_64-pc-windows-msvc --workspace --tests`)
+grün; `cargo clippy` nur die bekannten 9 Stilwarnungen, keine in geänderten Zeilen; `cargo audit`
+unverändert (keine Lockfile-Änderung); UI-Harness 26 Schritte × 4 Konfigurationen = 104/104 grün.
+Keine neuen Abhängigkeiten, Version 1.0.0.
+
+**Ausgeführt vs. nur gelesen**: Erkennung/Ersetzung über Kern-Tests und `anonym-cli` ausgeführt; UI nur
+gegen Mock-IPC im Headless-Chromium. Native Fenster, Dialoge und Windows-Dateisystem nur gelesen.
+Zusätzlich manuell: `⌘ + ,` (macOS) / `Strg + ,` (Windows) bei offenen Einstellungen nach einer
+Änderung → Esc stellt den alten Stand her.

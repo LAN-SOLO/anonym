@@ -289,6 +289,19 @@ fn next_char_ok(text: &str, end: usize) -> bool {
     text[end..].chars().next().map(|c| !c.is_alphanumeric()).unwrap_or(true)
 }
 
+/// Vorzeichenbehaftete Zahl mit Tausendergruppen („+12.500.000“, „+1 250 000“) statt
+/// internationaler Rufnummer: nach der ersten Gruppe nur Dreiergruppen, getrennt durch Punkt —
+/// oder durch Leerzeichen bei weniger als 9 Ziffern (echte internationale Nummern sind länger).
+fn signed_thousands(s: &str, digits: usize) -> bool {
+    let Some(rest) = s.strip_prefix('+') else { return false };
+    let seps: Vec<char> = rest.chars().filter(|c| !c.is_ascii_digit()).collect();
+    let groups: Vec<&str> = rest.split(|c: char| !c.is_ascii_digit()).collect();
+    if groups.len() < 2 || groups[0].is_empty() || groups[0].len() > 3 || !groups[1..].iter().all(|g| g.len() == 3) {
+        return false;
+    }
+    seps.iter().all(|&c| c == '.') || (seps.iter().all(|&c| c == ' ') && digits < 9)
+}
+
 fn detect_patterns(text: &str, d: &Dictionaries, out: &mut Vec<RawMatch>) {
     let p = patterns();
     for m in p.email.find_iter(text) {
@@ -341,7 +354,7 @@ fn detect_patterns(text: &str, d: &Dictionaries, out: &mut Vec<RawMatch>) {
     }
     for m in p.phone.find_iter(text) {
         let digits = m.as_str().chars().filter(|c| c.is_ascii_digit()).count();
-        if (7..=16).contains(&digits) && prev_char_ok(text, m.start()) && next_char_ok(text, m.end()) {
+        if (7..=16).contains(&digits) && prev_char_ok(text, m.start()) && next_char_ok(text, m.end()) && !signed_thousands(m.as_str(), digits) {
             out.push(RawMatch::simple(m.start(), m.end(), Category::Phone, Source::Pattern, 75));
         }
     }
@@ -696,6 +709,14 @@ mod tests {
             assert!(found.contains(&(Category::Phone, p.into())), "{p}: {found:?}");
         }
         assert!(found.contains(&(Category::Date, "02.07.1981".into())), "{found:?}");
+    }
+
+    #[test]
+    fn signed_numbers_are_not_phones() {
+        // Runde-3-Verifikation: Vorzeichen + Tausendergruppen galten als internationale Nummer
+        let found = run("Umsatz +12.500.000 EUR, Kurs +1.250.000, Bestand +1 250 000 Stück. Tel +49 221 4711 oder +49 30 123 456.");
+        let phones: Vec<&str> = found.iter().filter(|f| f.0 == Category::Phone).map(|f| f.1.as_str()).collect();
+        assert_eq!(phones, vec!["+49 221 4711", "+49 30 123 456"], "{found:?}");
     }
 
     #[test]

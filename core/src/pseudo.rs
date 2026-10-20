@@ -420,8 +420,19 @@ impl Pseudonymizer {
             let mut s: String = first_ten.iter().map(|x| char::from_digit(*x, 10).unwrap()).collect();
             s.push(char::from_digit(check, 10).unwrap());
             reflow(original, &s)
+        } else if compact.len() == 11 && compact.starts_with("DE") && compact[2..].chars().all(|c| c.is_ascii_digit()) {
+            // Deutsche USt-IdNr.: acht Ziffern neu (erste nicht 0), neunte = Prüfziffer (ISO 7064 Mod 11,10)
+            let mut eight: Vec<u32> = vec![d.digit_nonzero()];
+            while eight.len() < 8 {
+                eight.push(d.digit());
+            }
+            let check = checksum::tax_id_check_digit(&eight);
+            let mut s = String::from("DE");
+            s.extend(eight.iter().map(|x| char::from_digit(*x, 10).unwrap()));
+            s.push(char::from_digit(check, 10).unwrap());
+            reflow(original, &s)
         } else {
-            // USt-IdNr. o. ä.: Buchstaben bleiben, Ziffern neu
+            // Andere Kennungen: Buchstaben bleiben, Ziffern neu
             let mut s = String::new();
             for c in compact.chars() {
                 if c.is_ascii_digit() {
@@ -757,6 +768,13 @@ mod tests {
         let card = a.credit_card("4539 1488 0343 6467");
         assert!(checksum::luhn_valid(&card), "{card}");
         assert!(card.starts_with("4539 "));
+        // USt-IdNr.: gültige Prüfziffer (Runde-3-Verifikation)
+        for v in ["DE136695976", "DE 136695976"] {
+            let r = a.tax_id(v);
+            let digits: Vec<u32> = r.chars().filter_map(|c| c.to_digit(10)).collect();
+            assert!(r.starts_with("DE") && r.len() == v.len() && r != v && digits.len() == 9, "{r}");
+            assert_eq!(checksum::tax_id_check_digit(&digits[..8]), digits[8], "{r}");
+        }
         let tax = a.tax_id("86 095 742 719");
         assert!(checksum::tax_id_valid(&tax), "{tax}");
         assert_eq!(tax.len(), 14);
