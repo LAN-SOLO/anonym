@@ -317,7 +317,7 @@ const de = {
     docx: 'Word: Jeder Formatierungslauf ist eine Zeile — ein Name, den Word über zwei Läufe verteilt hat, erscheint geteilt. Gelöschter Text aus „Änderungen verfolgen“ und Link-Ziele (mailto:) werden mitgeprüft.',
     xlsx: 'Excel: Textzellen und Kommentare aller Blätter; Zahlenzellen nur in Spalten, deren Kopfzeile eine Kategorie nennt (Kd-Nr., Telefon, PLZ, Geb. …).',
     metadata: 'Beim Speichern entfernt anonym die Metadaten: Autor, zuletzt geändert von, Titel, Thema, Stichwörter, Firma, Manager sowie die Namen von Kommentar- und Überarbeitungs-Autoren.',
-    encoding: (name: string) => `Kodierung ${name} erkannt — Ausgabe in derselben Kodierung.`,
+    encoding: (name: string) => `Kein UTF-8 — gelesen als ${name} (Einstellungen → Dateien), Ausgabe in derselben Kodierung.`,
     pattern: (name: string, err: string) => `Eigenes Muster „${name}“ ungültig: ${err}`,
   },
 };
@@ -631,7 +631,7 @@ const en: Dict = {
     docx: 'Word: each formatting run is one line — a name Word split across two runs appears split. Deleted text from “Track changes” and link targets (mailto:) are checked too.',
     xlsx: 'Excel: text cells and comments of all sheets; numeric cells only in columns whose header names a category (customer no., phone, postcode, DOB …).',
     metadata: 'When saving, anonym removes the metadata: author, last modified by, title, subject, keywords, company, manager and the names of comment and revision authors.',
-    encoding: (name: string) => `Encoding ${name} detected — output in the same encoding.`,
+    encoding: (name: string) => `Not UTF-8 — read as ${name} (Settings → Files), output in the same encoding.`,
     pattern: (name: string, err: string) => `Custom pattern “${name}” invalid: ${err}`,
   },
 };

@@ -130,7 +130,14 @@ export default function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), isError ? 6000 : 2400);
   }, []);
   // Fehler aus dem Kern sind deutsch formuliert: in die Sprache der Oberfläche übersetzen
-  const fail = useCallback((e: unknown) => showToast(errorText(langRef.current, e), true), [showToast]);
+  const lastError = useRef<string | null>(null);
+  const fail = useCallback(
+    (e: unknown) => {
+      lastError.current = errorText(langRef.current, e);
+      showToast(lastError.current, true);
+    },
+    [showToast]
+  );
 
   // Bestätigung als Promise: 'ok' | 'alt' (dritte Schaltfläche) | 'cancel'
   type Answer = 'ok' | 'alt' | 'cancel';
@@ -485,6 +492,7 @@ export default function App() {
     if (busy) return;
     setBusy(true);
     let n = 0;
+    lastError.current = null;
     for (const f of files) {
       // Während des Speicherns aus der Liste entfernt: nicht mehr schreiben
       if (!filesRef.current.some((x) => x.path === f.path)) continue;
@@ -495,7 +503,9 @@ export default function App() {
       }
     }
     setBusy(false);
-    showToast(t.savedMany(n));
+    // Fehlgeschlagene Dateien: Grund nicht durch die Erfolgsmeldung überdecken
+    if (lastError.current) showToast(`${t.savedMany(n)} ${lastError.current}`, true);
+    else showToast(t.savedMany(n));
   };
 
   // --- Wiederherstellen ----------------------------------------------------------

@@ -352,6 +352,13 @@ CLI-Lauf (`anonym-cli` mit Prüftexten, Pfad mit Leerzeichen und Umlaut) oder UI
 - „Existiert die Ausgabe schon, fragt anonym“: nur beim direkten Speichern (abschaltbar); im
   Dateidialog („Speichern unter“, „Exportieren“) fragt das System.
 - Grenzen: Kontext-Treffer haben 70 %, nicht 65 % (`best_conf.max(70)`).
+- Dateihinweis „Kodierung windows-1252 erkannt“: es wird nichts erkannt, sondern die Rückfall-Codepage
+  benutzt. Jetzt „Kein UTF-8 — gelesen als windows-1252 (Einstellungen → Dateien) …“.
+
+**Beim Durchspielen gefunden**
+- „Alle speichern“ mit Fehlern (z. B. gesperrte Dateien): jeder Fehler-Toast wurde sofort von
+  „0 Dateien gespeichert.“ überschrieben — der Grund war nicht zu sehen. Jetzt steht der letzte Fehler
+  hinter der Zählung (`saveAll`).
 
 **Reste aus Runde 2 — behoben**
 - Saat von Hand: wird erst beim Verlassen des Felds oder mit Enter übernommen (vorher jeder
@@ -391,9 +398,11 @@ jetzt in eine „Festplatte“ (sessionStorage), die einen Neustart übersteht, 
 7. Handbuch offen: R/O/3 ohne Wirkung, Esc schließt, danach „R“ (groß) öffnet Wiederherstellen (`helpKeys`).
 8. Neustart mitten in der Arbeit: Regelwerk-Name geändert, Seite neu geladen → Name, Saat, Sprache,
    Thema bleiben, Tutorial erscheint nicht erneut (`restartPrep`/`restartCheck`).
-9. Regelwerk (Muster entfernen, Zurücksetzen), Einstellungen alle Reiter, Update-Fehler,
+9. Mehrere Dateien (CSV, DOCX, Namen mit Leerzeichen/Umlaut) → „Alle speichern (3)“ mit dem
+   Sitzungs-Passwort für jede Datei; mit gesperrter Datei: Zählung 0 + Grund (`saveAll`).
+10. Regelwerk (Muster entfernen, Zurücksetzen), Einstellungen alle Reiter, Update-Fehler,
    Wiederherstellen-Fehler, Handbuch-Kürzel (Bestand).
-Ergebnis: 22 Schritte × 4 = 88 grün, kein Überlauf bei 960×620, keine fremdsprachigen Texte, keine
+Ergebnis: 23 Schritte × 4 = 92 grün, kein Überlauf bei 960×620, keine fremdsprachigen Texte, keine
 Seitenfehler. Gegenprobe: dieselben neuen Schritte gegen den Stand `053d72f` → `seedTyping`,
 `storeClear`, `escPassword`, `helpKeys`, `restartCheck` rot (`helpKeys` dort nur über „R“ groß;
  die Sperre hinter dem Handbuch ist in dieser Gegenprobe nicht sauber getrennt nachgewiesen, weil der
@@ -408,7 +417,7 @@ Seitenfehler. Gegenprobe: dieselben neuen Schritte gegen den Stand `053d72f` →
 | `cargo check --target x86_64-pc-windows-msvc --workspace --tests` (vom Mac, ohne Linken) | grün |
 | `cargo clippy --workspace --tests` | nur vorbestehende Stilhinweise (keiner in geänderten Zeilen) |
 | `cargo audit` | keine Schwachstelle im Code von anonym; zip-`extract()`-Advisories wie in Runde 2; neu nur „unmaintained“ für `zvariant`/`zvariant_derive` (RUSTSEC-2026-0370…0372, Linux-D-Bus-Unterbau) |
-| UI-Szenario (s. o.) | 88/88 grün |
+| UI-Szenario (s. o.) | 92/92 grün |
 
 **Bekannt, nicht geändert**
 - `apply_file` schreibt Ausgabe → Speicher → Bericht → Recover-Datei nacheinander. Scheitert ein
