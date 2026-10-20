@@ -380,8 +380,9 @@ Endungsliste Frontend = Kern, Kürzel-Liste, „+ Datei“, Fundstellen-Zahl in 
 
 **Ende-zu-Ende-Abläufe** (UI-Szenario, headless Chromium, Mock-IPC mit plugin-dialog-2.7-Verhalten,
 je DE/EN × dunkel/hell × macOS/Windows-User-Agent; die Mock-IPC schreibt Regelwerk/Einstellungen
-jetzt in eine „Festplatte“ (sessionStorage), die einen Neustart übersteht, und verlangt wie
-`apply_file` ein Passwort bei verschlüsselter Recover-Datei)
+jetzt in eine „Festplatte“ (sessionStorage), die einen Neustart übersteht, verlangt wie
+`apply_file` ein Passwort bei verschlüsselter Recover-Datei und bildet die Dateinamen-Vorschläge
+(`suggest_recovered`, `suggest_recover_key`, Bericht/Recover neben der Ausgabe) wie der Rust-Code nach)
 1. Erststart → Datei öffnen → Fundstellen → Kategoriewechsel → Vorschau → Speichern → Bericht (Bestand).
 2. Abgebrochener Dateidialog bei Öffnen, „Speichern unter“ und „Exportieren“: keine Analyse, kein
    Schreiben, kein Fehler-Toast (`cancelDialog`).
@@ -400,9 +401,12 @@ jetzt in eine „Festplatte“ (sessionStorage), die einen Neustart übersteht, 
    Thema bleiben, Tutorial erscheint nicht erneut (`restartPrep`/`restartCheck`).
 9. Mehrere Dateien (CSV, DOCX, Namen mit Leerzeichen/Umlaut) → „Alle speichern (3)“ mit dem
    Sitzungs-Passwort für jede Datei; mit gesperrter Datei: Zählung 0 + Grund (`saveAll`).
-10. Regelwerk (Muster entfernen, Zurücksetzen), Einstellungen alle Reiter, Update-Fehler,
+10. Wiederherstellen: bearbeitete Datei wählen → Recover-Datei daneben vorgeschlagen
+   (`brief.anonym.recover.json`), verschlüsselt → Passwortfeld (mit Sitzungs-Passwort vorbelegt),
+   falsches Passwort → „Falsches Passwort.“, richtiges → Ergebnis, Ziel `brief.recovered.txt` (`recoverFlow`).
+11. Regelwerk (Muster entfernen, Zurücksetzen), Einstellungen alle Reiter, Update-Fehler,
    Wiederherstellen-Fehler, Handbuch-Kürzel (Bestand).
-Ergebnis: 23 Schritte × 4 = 92 grün, kein Überlauf bei 960×620, keine fremdsprachigen Texte, keine
+Ergebnis: 24 Schritte × 4 = 96 grün, kein Überlauf bei 960×620, keine fremdsprachigen Texte, keine
 Seitenfehler. Gegenprobe: dieselben neuen Schritte gegen den Stand `053d72f` → `seedTyping`,
 `storeClear`, `escPassword`, `helpKeys`, `restartCheck` rot (`helpKeys` dort nur über „R“ groß;
  die Sperre hinter dem Handbuch ist in dieser Gegenprobe nicht sauber getrennt nachgewiesen, weil der
@@ -417,7 +421,7 @@ Seitenfehler. Gegenprobe: dieselben neuen Schritte gegen den Stand `053d72f` →
 | `cargo check --target x86_64-pc-windows-msvc --workspace --tests` (vom Mac, ohne Linken) | grün |
 | `cargo clippy --workspace --tests` | nur vorbestehende Stilhinweise (keiner in geänderten Zeilen) |
 | `cargo audit` | keine Schwachstelle im Code von anonym; zip-`extract()`-Advisories wie in Runde 2; neu nur „unmaintained“ für `zvariant`/`zvariant_derive` (RUSTSEC-2026-0370…0372, Linux-D-Bus-Unterbau) |
-| UI-Szenario (s. o.) | 92/92 grün |
+| UI-Szenario (s. o.) | 96/96 grün |
 
 **Bekannt, nicht geändert**
 - `apply_file` schreibt Ausgabe → Speicher → Bericht → Recover-Datei nacheinander. Scheitert ein
